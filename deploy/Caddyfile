@@ -1,9 +1,8 @@
 {
-	email {$ACME_EMAIL}
 	admin off
 }
 
-{$DOMAIN} {
+{$SITE_ADDRESS} {
 	encode zstd gzip
 
 	header {

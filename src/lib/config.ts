@@ -10,6 +10,10 @@ const environmentSchema = z.object({
   ADMIN_USERNAME: z.string().min(1).default("admin"),
   ADMIN_PASSWORD_HASH: z.string().optional(),
   SESSION_SECRET: z.string().min(32).optional(),
+  SECURE_COOKIES: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
   TELEGRAM_HOURLY_INTERVAL_MINUTES: z.coerce
@@ -53,5 +57,6 @@ export function requireAuthConfig() {
     username: config.ADMIN_USERNAME,
     passwordHash: config.ADMIN_PASSWORD_HASH,
     sessionSecret: config.SESSION_SECRET,
+    secureCookies: config.SECURE_COOKIES,
   };
 }

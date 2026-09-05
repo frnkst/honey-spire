@@ -119,8 +119,25 @@ AVAILABLE_GB="$(df -Pk / | awk 'NR == 2 { print int($4 / 1024 / 1024) }')"
   fail "At least 8 GB of free disk space is required; detected ${AVAILABLE_GB} GB."
 
 say "Collecting Honey Spire configuration"
-prompt DOMAIN "Dashboard domain (DNS must point to this server)"
-prompt ACME_EMAIL "Email for HTTPS certificate notices"
+prompt DOMAIN "Dashboard domain (leave blank to use this server's public IP)"
+if [[ -n "$DOMAIN" ]]; then
+  SITE_ADDRESS="$DOMAIN"
+  DASHBOARD_URL="https://${DOMAIN}"
+  SSH_HOST="$DOMAIN"
+  SECURE_COOKIES=true
+else
+  say "Detecting the server's public IPv4 address"
+  PUBLIC_IP="$(
+    curl -4fsS --max-time 10 https://api.ipify.org ||
+      hostname -I | awk '{ print $1 }'
+  )"
+  [[ "$PUBLIC_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] ||
+    fail "Could not detect a public IPv4 address. Re-run and enter a domain."
+  SITE_ADDRESS="http://${PUBLIC_IP}"
+  DASHBOARD_URL="$SITE_ADDRESS"
+  SSH_HOST="$PUBLIC_IP"
+  SECURE_COOKIES=false
+fi
 prompt ADMIN_USERNAME "Dashboard administrator username" "admin"
 prompt_secret ADMIN_PASSWORD "Dashboard password (minimum 12 characters)"
 [[ "${#ADMIN_PASSWORD}" -ge 12 ]] ||
@@ -184,12 +201,12 @@ unset ADMIN_PASSWORD
 SESSION_SECRET="$(openssl rand -hex 32)"
 
 {
-  printf 'DOMAIN=%s\n' "$(env_quote "$DOMAIN")"
-  printf 'ACME_EMAIL=%s\n' "$(env_quote "$ACME_EMAIL")"
+  printf 'SITE_ADDRESS=%s\n' "$(env_quote "$SITE_ADDRESS")"
   printf 'HONEY_SPIRE_IMAGE=%s\n' "$(env_quote "$IMAGE")"
   printf 'ADMIN_USERNAME=%s\n' "$(env_quote "$ADMIN_USERNAME")"
   printf 'ADMIN_PASSWORD_HASH=%s\n' "$(env_quote "$ADMIN_PASSWORD_HASH")"
   printf 'SESSION_SECRET=%s\n' "$(env_quote "$SESSION_SECRET")"
+  printf 'SECURE_COOKIES=%s\n' "$SECURE_COOKIES"
   printf 'MAXMIND_LICENSE_KEY=%s\n' "$(env_quote "$MAXMIND_LICENSE_KEY")"
   printf 'TELEGRAM_BOT_TOKEN=%s\n' "$(env_quote "$TELEGRAM_BOT_TOKEN")"
   printf 'TELEGRAM_CHAT_ID=%s\n' "$(env_quote "$TELEGRAM_CHAT_ID")"
@@ -204,7 +221,9 @@ unset ADMIN_PASSWORD_HASH SESSION_SECRET MAXMIND_LICENSE_KEY TELEGRAM_BOT_TOKEN
 say "Opening required firewall ports"
 open_firewall_port "$SSH_PORT"
 open_firewall_port 80
-open_firewall_port 443
+if [[ -n "$DOMAIN" ]]; then
+  open_firewall_port 443
+fi
 
 CURRENT_PORTS="$(sshd -T | awk '$1 == "port" { print $2 }' | sort -u)"
 if [[ "$CURRENT_PORTS" != "$SSH_PORT" ]]; then
@@ -269,11 +288,11 @@ done
 docker compose ps --status running --services | grep -qx cowrie ||
   fail "The Cowrie honeypot did not start."
 docker compose ps --status running --services | grep -qx caddy ||
-  fail "The HTTPS proxy did not start."
+  fail "The dashboard proxy did not start."
 
 SSH_CHANGED=0
 trap - ERR
-say "Honey Spire is running at https://${DOMAIN}"
+say "Honey Spire is running at ${DASHBOARD_URL}"
 printf '\nReal SSH now listens on port %s. Open a second terminal and verify:\n' "$SSH_PORT"
-printf '  ssh -p %s %s@%s\n\n' "$SSH_PORT" "${SUDO_USER:-root}" "$DOMAIN"
+printf '  ssh -p %s %s@%s\n\n' "$SSH_PORT" "${SUDO_USER:-root}" "$SSH_HOST"
 printf 'Keep this terminal open until that connection succeeds.\n'

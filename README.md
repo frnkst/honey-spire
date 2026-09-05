@@ -30,7 +30,7 @@ dependency.
 - Ubuntu 22.04, Ubuntu 24.04, or Debian 12
 - 1 GB RAM, 1 vCPU, 8 GB free disk minimum
 - A public IPv4 address
-- A domain with an `A` record pointing to the server
+- Optional: a domain with an `A` record pointing to the server for trusted HTTPS
 - Ports 22, 80, 443, and 3001 permitted by the provider firewall
 - A free [MaxMind GeoLite2 account and license key](https://www.maxmind.com/en/geolite2/signup)
 
@@ -49,23 +49,25 @@ curl -fsSL https://raw.githubusercontent.com/frnkst/honey-spire/main/scripts/ins
 
 The installer prompts for:
 
-- Dashboard domain and ACME email
+- Optional dashboard domain; leave it blank to use the server's public IP
 - Administrator username and password
 - Free MaxMind GeoLite2 license key
 - Optional Telegram bot token and channel ID
 
 It then installs Docker, moves the real SSH daemon to port 3001, verifies the
-new listener, generates secrets, starts Honey Spire, and provisions HTTPS
-through Caddy.
+new listener, generates secrets, and starts Honey Spire. Caddy provisions
+trusted HTTPS when a domain is supplied. Without a domain, the installer
+detects the server's public IPv4 address and serves the dashboard over HTTP.
 
 Before closing the original connection, open another terminal and verify:
 
 ```bash
-ssh -p 3001 your-user@your-domain.example
+ssh -p 3001 your-user@your-domain-or-ip
 ```
 
 The honeypot is available to scanners on port 22. The dashboard is available at
-`https://your-domain.example`.
+`https://your-domain.example` with a domain, or `http://your-server-ip` without
+one.
 
 For a pinned installer release:
 
