@@ -12,12 +12,15 @@ The dashboard includes:
 - A live world map when free MaxMind GeoLite2 enrichment is configured
 - Top 20 source IPs, usernames, and passwords
 - The 20 most recent credential attempts
-- The 20 most recent commands entered in emulated shells
+- The first command entered in each of the 20 most recent emulated sessions
 - SSH client banners, HASSH fingerprints, and negotiated algorithms
 - Configurable hourly and daily Telegram summaries
 
 Cowrie intentionally accepts many credential combinations so it can capture
-commands in its emulated shell. It never grants access to the host system.
+commands in its emulated shell. Each source IP must submit nine distinct
+credential combinations before the tenth distinct attempt is accepted. Honey
+Spire stores only the first shell command from each session. Cowrie never
+grants access to the host system.
 
 The web interface uses Next.js, shadcn/ui, Tailwind CSS, and Apache ECharts.
 SQLite stores all structured telemetry; there is no PostgreSQL or Redis

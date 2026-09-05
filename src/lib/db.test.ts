@@ -64,6 +64,15 @@ describe("Cowrie telemetry", () => {
       username: "root",
       command: "uname -a",
     });
+    await processCowrieRecord({
+      eventid: "cowrie.command.input",
+      session,
+      timestamp: new Date().toISOString(),
+      src_ip: "203.0.113.10",
+      input: "cat /etc/passwd",
+    });
+    expect(getDashboardData("1h").recentCommands).toHaveLength(1);
+    expect(getDashboardData("1h").recentCommands[0].command).toBe("uname -a");
 
     await processCowrieRecord({
       eventid: "cowrie.login.failed",

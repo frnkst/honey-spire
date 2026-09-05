@@ -304,7 +304,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 font-heading text-base">
               <TerminalSquare className="size-4 text-secondary" />
-              Recent attacker commands
+              First command per session
             </CardTitle>
             <Badge variant="outline">{data.recentCommands.length} recent</Badge>
           </CardHeader>
@@ -345,7 +345,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                       className="h-28 text-center text-muted-foreground"
                       colSpan={4}
                     >
-                      Commands entered in emulated shells will appear here.
+                      The first command entered in each emulated shell appears here.
                     </TableCell>
                   </TableRow>
                 )}

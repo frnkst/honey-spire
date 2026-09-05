@@ -214,7 +214,10 @@ export function insertCommand(
     .prepare(
       `INSERT OR IGNORE INTO command_events
         (occurred_at, session_id, source_ip, command)
-       VALUES (@occurredAt, @sessionId, @sourceIp, @command)`,
+       SELECT @occurredAt, @sessionId, @sourceIp, @command
+       WHERE NOT EXISTS (
+         SELECT 1 FROM command_events WHERE session_id = @sessionId
+       )`,
     )
     .run(command);
   if (result.changes === 0) return null;
@@ -294,6 +297,11 @@ export function getDashboardData(range = "24h"): DashboardData {
           LIMIT 1
         ), '') AS username
        FROM command_events c
+       WHERE c.id = (
+         SELECT MIN(first_command.id)
+         FROM command_events first_command
+         WHERE first_command.session_id = c.session_id
+       )
        ORDER BY c.occurred_at DESC
        LIMIT 20`,
     )
