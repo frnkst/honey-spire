@@ -8,14 +8,15 @@ IMAGE="${HONEY_SPIRE_IMAGE:-ghcr.io/frnkst/honey-spire:latest}"
 SSH_PORT=3001
 SSH_BACKUP=""
 SSH_CHANGED=0
+LOG_FILE="${HONEY_SPIRE_LOG_FILE:-/var/log/honey-spire-install.log}"
+FAILURE_REPORTED=0
 
 say() {
   printf '\033[1;33m%s\033[0m\n' "$*"
 }
 
 fail() {
-  printf '\033[1;31mError: %s\033[0m\n' "$*" >&2
-  rollback_ssh
+  report_failure 1 "$LINENO" "$*"
   exit 1
 }
 
@@ -88,9 +89,74 @@ rollback_ssh() {
   set -e
 }
 
-trap rollback_ssh ERR
+report_failure() {
+  local exit_code="$1"
+  local line_number="$2"
+  local failed_command="$3"
+  if [[ "$FAILURE_REPORTED" -eq 1 ]]; then
+    return
+  fi
+  FAILURE_REPORTED=1
+  trap - ERR
+  set +e
+
+  printf '\n\033[1;31mHoney Spire installation failed.\033[0m\n' >&2
+  printf '  Exit code: %s\n' "$exit_code" >&2
+  printf '  Script line: %s\n' "$line_number" >&2
+  printf '  Failed step: %s\n' "$failed_command" >&2
+  printf '  Image: %s\n' "$IMAGE" >&2
+  printf '  OS: %s %s\n' "${ID:-unknown}" "${VERSION_ID:-unknown}" >&2
+  printf '  Architecture: %s\n' "$(uname -m)" >&2
+  printf '  Free disk: %s\n' "$(df -h / | awk 'NR == 2 { print $4 }')" >&2
+  printf '  Available memory: %s MB\n' \
+    "$(awk '/MemAvailable/ { print int($2 / 1024) }' /proc/meminfo)" >&2
+  if command -v docker >/dev/null 2>&1; then
+    printf '  Docker: %s\n' "$(docker --version 2>&1)" >&2
+    printf '  Compose: %s\n' "$(docker compose version 2>&1)" >&2
+  fi
+
+  if [[ -f "$INSTALL_DIR/compose.yaml" && -f "$INSTALL_DIR/.env" ]]; then
+    printf '\nContainer status:\n' >&2
+    docker compose --project-directory "$INSTALL_DIR" ps >&2
+    printf '\nRecent container logs:\n' >&2
+    docker compose --project-directory "$INSTALL_DIR" logs \
+      --tail=80 --no-color >&2
+  fi
+
+  rollback_ssh
+  printf '\nFull installer output: %s\n' "$LOG_FILE" >&2
+  printf 'Include that file and the output above when reporting a problem.\n' >&2
+}
+
+on_error() {
+  local exit_code="$1"
+  local line_number="$2"
+  local failed_command="$3"
+  report_failure "$exit_code" "$line_number" "$failed_command"
+  exit "$exit_code"
+}
+
+pull_application_image() {
+  local attempt
+  for attempt in {1..12}; do
+    if docker pull "$IMAGE"; then
+      return
+    fi
+    if [[ "$attempt" -lt 12 ]]; then
+      say "Image is not available yet; retrying in 15 seconds (${attempt}/12)"
+      sleep 15
+    fi
+  done
+  fail "Could not pull ${IMAGE}. Check that the Container workflow completed and the GHCR package is public: https://github.com/${REPOSITORY}/actions/workflows/container.yml"
+}
 
 [[ "$EUID" -eq 0 ]] || fail "Run this installer as root (for example, with sudo)."
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
+
 [[ "$(uname -s)" == "Linux" ]] || fail "Honey Spire supports Linux only."
 case "$(uname -m)" in
   x86_64 | aarch64 | arm64) ;;
@@ -191,7 +257,7 @@ curl -fsSL "$BASE_URL/deploy/cowrie.cfg" -o "$INSTALL_DIR/deploy/cowrie.cfg"
 chmod 644 "$INSTALL_DIR/deploy/cowrie.cfg"
 
 say "Preparing application secrets"
-docker pull "$IMAGE" >/dev/null
+pull_application_image
 ADMIN_PASSWORD_HASH="$(
   printf '%s' "$ADMIN_PASSWORD" |
     docker run --rm -i --entrypoint node "$IMAGE" scripts/hash-password.mjs

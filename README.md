@@ -55,6 +55,10 @@ The installer prompts for:
   geolocation and ASN enrichment
 - Optional Telegram bot token and channel ID
 
+The application image is published by the repository's Container workflow.
+When a release is still being built, the installer waits up to three minutes
+for the image to become available.
+
 It then installs Docker, moves the real SSH daemon to port 3001, verifies the
 new listener, generates secrets, and starts Honey Spire. Caddy provisions
 trusted HTTPS when a domain is supplied. Without a domain, the installer
@@ -124,6 +128,21 @@ The installer saves the original SSH configuration under
 `/var/backups/honey-spire-ssh-*`. If port 3001 is inaccessible, use the
 provider's web console, restore `sshd_config` and `sshd_config.d` from the
 latest backup, run `sshd -t`, then restart `ssh` or `sshd`.
+
+### Installer diagnostics
+
+The installer writes its complete output to:
+
+```text
+/var/log/honey-spire-install.log
+```
+
+On failure it reports the failed command and line, OS and architecture,
+available memory and disk, Docker versions, container status, and recent
+container logs. Secrets and the generated environment file are not printed.
+If an image pull is denied, confirm that the
+[Container workflow](https://github.com/frnkst/honey-spire/actions/workflows/container.yml)
+has completed successfully and that the `honey-spire` GHCR package is public.
 
 ### Uninstall
 
