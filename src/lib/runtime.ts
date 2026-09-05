@@ -76,6 +76,8 @@ export function startRuntime() {
     await removeExpiredFiles(
       config.COWRIE_TTY_DIR,
       config.RAW_SESSION_RETENTION_DAYS,
+      (filePath) =>
+        /^\d{8}-\d{6}-[a-f0-9]+-\d+i\.log$/.test(path.basename(filePath)),
     );
     await removeExpiredFiles(
       path.dirname(config.COWRIE_JSON_LOG),

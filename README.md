@@ -15,6 +15,9 @@ The dashboard includes:
 - SSH client banners, HASSH fingerprints, and negotiated algorithms
 - Configurable hourly and daily Telegram summaries
 
+Cowrie intentionally accepts many credential combinations so it can capture
+commands in its emulated shell. It never grants access to the host system.
+
 The web interface uses Next.js, shadcn/ui, Tailwind CSS, and Apache ECharts.
 SQLite stores all structured telemetry; there is no PostgreSQL or Redis
 dependency.
