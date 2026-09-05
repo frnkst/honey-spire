@@ -4,7 +4,9 @@ import { getConfig } from "@/lib/config";
 import {
   getFingerprint,
   getMetadata,
+  getSessionContext,
   insertAttack,
+  insertCommand,
   setMetadata,
   upsertFingerprint,
 } from "@/lib/db";
@@ -20,6 +22,11 @@ type CowrieRecord = Record<string, unknown> & {
   username?: string;
   password?: string;
 };
+
+function parseTimestamp(timestamp: unknown) {
+  const parsed = timestamp ? new Date(String(timestamp)).getTime() : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
 
 function serializeAlgorithms(record: CowrieRecord): string | null {
   const keys = [
@@ -59,6 +66,24 @@ export async function processCowrieRecord(record: CowrieRecord) {
     return;
   }
 
+  if (record.eventid === "cowrie.command.input") {
+    const commandText = String(record.input ?? "")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .slice(0, 4096);
+    if (!commandText) return;
+    const context = getSessionContext(sessionId);
+    const sourceIp = String(record.src_ip ?? context?.sourceIp ?? "");
+    if (!sourceIp) return;
+    const command = insertCommand({
+      occurredAt: parseTimestamp(record.timestamp),
+      sessionId,
+      sourceIp,
+      command: commandText,
+    });
+    if (command) liveEvents.emit("command", command);
+    return;
+  }
+
   if (
     record.eventid !== "cowrie.login.failed" &&
     record.eventid !== "cowrie.login.success"
@@ -73,11 +98,8 @@ export async function processCowrieRecord(record: CowrieRecord) {
     geolocateIp(sourceIp),
     Promise.resolve(getFingerprint(sessionId)),
   ]);
-  const parsedTimestamp = record.timestamp
-    ? new Date(record.timestamp).getTime()
-    : Number.NaN;
   const attack = insertAttack({
-    occurredAt: Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now(),
+    occurredAt: parseTimestamp(record.timestamp),
     sessionId,
     sourceIp,
     sourcePort:

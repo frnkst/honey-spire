@@ -9,6 +9,7 @@ import {
   LogOut,
   Radio,
   ShieldAlert,
+  TerminalSquare,
 } from "lucide-react";
 import { AttackGauge, AttackMap, AttackTrend } from "@/components/threat-charts";
 import { Brand } from "@/components/brand";
@@ -156,6 +157,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => void refresh(range), 500);
     });
+    events.addEventListener("command", () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => void refresh(range), 250);
+    });
     return () => {
       clearTimeout(refreshTimer);
       events.close();
@@ -294,6 +299,60 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           <RankTable title="Top 20 usernames" values={data.topUsernames} />
           <RankTable mono title="Top 20 passwords" values={data.topPasswords} />
         </section>
+
+        <Card className="glass-card min-w-0 border-secondary/15">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2 font-heading text-base">
+              <TerminalSquare className="size-4 text-secondary" />
+              Recent attacker commands
+            </CardTitle>
+            <Badge variant="outline">{data.recentCommands.length} recent</Badge>
+          </CardHeader>
+          <CardContent className="overflow-x-auto px-0">
+            <Table className="min-w-[700px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-6">Time</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Username</TableHead>
+                  <TableHead>Command</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.recentCommands.length ? (
+                  data.recentCommands.map((command) => (
+                    <TableRow key={command.id}>
+                      <TableCell className="pl-6 font-mono text-xs text-muted-foreground">
+                        {new Date(command.occurredAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-primary">
+                        {command.sourceIp}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {command.username || "Unknown"}
+                      </TableCell>
+                      <TableCell
+                        className="max-w-xl whitespace-pre-wrap break-all font-mono text-xs text-secondary"
+                        title={command.command}
+                      >
+                        {command.command}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      className="h-28 text-center text-muted-foreground"
+                      colSpan={4}
+                    >
+                      Commands entered in emulated shells will appear here.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
         <Card className="glass-card min-w-0 border-white/[.06]">
           <CardHeader>

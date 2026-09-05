@@ -12,6 +12,7 @@ The dashboard includes:
 - A live world map when free MaxMind GeoLite2 enrichment is configured
 - Top 20 source IPs, usernames, and passwords
 - The 20 most recent credential attempts
+- The 20 most recent commands entered in emulated shells
 - SSH client banners, HASSH fingerprints, and negotiated algorithms
 - Configurable hourly and daily Telegram summaries
 
@@ -25,9 +26,9 @@ dependency.
 > [!WARNING]
 > No internet-facing service is completely safe. Honey Spire reduces exposure
 > through Cowrie's emulated shell, non-root containers, read-only filesystems,
-> a honeypot network separated from the dashboard, one-byte download limits,
-> resource limits, and automatic retention. Keep the host and Docker
-> installation patched.
+> a honeypot network separated from the dashboard, strict transfer limits,
+> ephemeral download storage, resource limits, and automatic retention. Keep
+> the host and Docker installation patched.
 
 ## Server requirements
 

@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { getConfig } from "@/lib/config";
-import type { AttackEvent, DashboardData, RankedValue } from "@/lib/types";
+import type {
+  AttackEvent,
+  CommandEvent,
+  DashboardData,
+  RankedValue,
+} from "@/lib/types";
 
 let database: Database.Database | undefined;
 
@@ -26,6 +31,17 @@ function rowToAttack(row: Record<string, unknown>): AttackEvent {
     hassh: row.hassh ? String(row.hassh) : null,
     algorithms: row.algorithms ? String(row.algorithms) : null,
     successful: Boolean(row.successful),
+  };
+}
+
+function rowToCommand(row: Record<string, unknown>): CommandEvent {
+  return {
+    id: Number(row.id),
+    occurredAt: Number(row.occurred_at),
+    sessionId: String(row.session_id),
+    sourceIp: String(row.source_ip),
+    username: String(row.username),
+    command: String(row.command),
   };
 }
 
@@ -68,6 +84,19 @@ export function getDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS attacks_source_ip_idx ON attacks(source_ip, occurred_at);
     CREATE INDEX IF NOT EXISTS attacks_username_idx ON attacks(username, occurred_at);
     CREATE INDEX IF NOT EXISTS attacks_password_idx ON attacks(password, occurred_at);
+
+    CREATE TABLE IF NOT EXISTS command_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      occurred_at INTEGER NOT NULL,
+      session_id TEXT NOT NULL,
+      source_ip TEXT NOT NULL,
+      command TEXT NOT NULL,
+      UNIQUE (occurred_at, session_id, command)
+    );
+    CREATE INDEX IF NOT EXISTS command_events_occurred_at_idx
+      ON command_events(occurred_at);
+    CREATE INDEX IF NOT EXISTS command_events_session_id_idx
+      ON command_events(session_id, occurred_at);
 
     CREATE TABLE IF NOT EXISTS minute_stats (
       bucket INTEGER PRIMARY KEY,
@@ -164,6 +193,39 @@ export function insertAttack(
   return id === null ? null : { ...attack, id };
 }
 
+export function getSessionContext(sessionId: string) {
+  return getDatabase()
+    .prepare(
+      `SELECT source_ip AS sourceIp, username
+       FROM attacks
+       WHERE session_id = ?
+       ORDER BY occurred_at DESC
+       LIMIT 1`,
+    )
+    .get(sessionId) as
+    | { sourceIp: string; username: string }
+    | undefined;
+}
+
+export function insertCommand(
+  command: Omit<CommandEvent, "id" | "username">,
+): CommandEvent | null {
+  const result = getDatabase()
+    .prepare(
+      `INSERT OR IGNORE INTO command_events
+        (occurred_at, session_id, source_ip, command)
+       VALUES (@occurredAt, @sessionId, @sourceIp, @command)`,
+    )
+    .run(command);
+  if (result.changes === 0) return null;
+  const context = getSessionContext(command.sessionId);
+  return {
+    ...command,
+    id: Number(result.lastInsertRowid),
+    username: context?.username ?? "",
+  };
+}
+
 const rangeMilliseconds: Record<string, number> = {
   "1h": 60 * 60_000,
   "24h": 24 * 60 * 60_000,
@@ -220,6 +282,22 @@ export function getDashboardData(range = "24h"): DashboardData {
   const recentRows = db
     .prepare(`SELECT * FROM attacks ORDER BY occurred_at DESC LIMIT 20`)
     .all() as Record<string, unknown>[];
+  const commandRows = db
+    .prepare(
+      `SELECT
+        c.*,
+        COALESCE((
+          SELECT a.username
+          FROM attacks a
+          WHERE a.session_id = c.session_id
+          ORDER BY a.occurred_at DESC
+          LIMIT 1
+        ), '') AS username
+       FROM command_events c
+       ORDER BY c.occurred_at DESC
+       LIMIT 20`,
+    )
+    .all() as Record<string, unknown>[];
   const mapRows = db
     .prepare(
       `SELECT * FROM attacks
@@ -250,6 +328,7 @@ export function getDashboardData(range = "24h"): DashboardData {
     topIps: topValues("source_ip", since),
     topUsernames: topValues("username", since),
     topPasswords: topValues("password", since),
+    recentCommands: commandRows.map(rowToCommand),
     recentAttacks: recentRows.map(rowToAttack),
     mapAttacks: mapRows.map(rowToAttack),
   };
@@ -276,6 +355,7 @@ export function cleanupDatabase(retentionDays: number) {
   const db = getDatabase();
   db.transaction(() => {
     db.prepare(`DELETE FROM attacks WHERE occurred_at < ?`).run(cutoff);
+    db.prepare(`DELETE FROM command_events WHERE occurred_at < ?`).run(cutoff);
     db.prepare(`DELETE FROM minute_stats WHERE bucket < ?`).run(cutoff);
     db.prepare(`DELETE FROM session_fingerprints WHERE updated_at < ?`).run(
       Date.now() - 24 * 60 * 60_000,

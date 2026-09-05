@@ -19,6 +19,15 @@ export interface AttackEvent {
   successful: boolean;
 }
 
+export interface CommandEvent {
+  id: number;
+  occurredAt: number;
+  sessionId: string;
+  sourceIp: string;
+  username: string;
+  command: string;
+}
+
 export interface RankedValue {
   value: string;
   count: number;
@@ -40,6 +49,7 @@ export interface DashboardData {
   topIps: RankedValue[];
   topUsernames: RankedValue[];
   topPasswords: RankedValue[];
+  recentCommands: CommandEvent[];
   recentAttacks: AttackEvent[];
   mapAttacks: AttackEvent[];
 }

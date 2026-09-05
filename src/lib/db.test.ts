@@ -53,6 +53,19 @@ describe("Cowrie telemetry", () => {
     });
 
     await processCowrieRecord({
+      eventid: "cowrie.command.input",
+      session,
+      timestamp: new Date().toISOString(),
+      src_ip: "203.0.113.10",
+      input: "uname -a",
+    });
+    expect(getDashboardData("1h").recentCommands[0]).toMatchObject({
+      sourceIp: "203.0.113.10",
+      username: "root",
+      command: "uname -a",
+    });
+
+    await processCowrieRecord({
       eventid: "cowrie.login.failed",
       session,
       timestamp: new Date(dashboard.recentAttacks[0].occurredAt).toISOString(),
