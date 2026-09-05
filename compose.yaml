@@ -127,7 +127,6 @@ services:
 networks:
   web:
   honeypot:
-    internal: true
 
 volumes:
   app-data:

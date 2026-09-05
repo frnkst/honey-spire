@@ -338,6 +338,7 @@ fi
 
 say "Starting Honey Spire"
 cd "$INSTALL_DIR"
+docker compose down --remove-orphans
 docker compose up -d
 APP_HEALTHY=0
 for _ in {1..30}; do
@@ -352,6 +353,10 @@ done
   fail "The Honey Spire application did not start."
 docker compose ps --status running --services | grep -qx cowrie ||
   fail "The Cowrie honeypot did not start."
+docker compose port cowrie 2222 | grep -q ':22$' ||
+  fail "Docker did not publish Cowrie on host port 22."
+timeout 5 bash -c '</dev/tcp/127.0.0.1/22' ||
+  fail "Cowrie is running but host port 22 is not accepting connections."
 docker compose ps --status running --services | grep -qx caddy ||
   fail "The dashboard proxy did not start."
 

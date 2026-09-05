@@ -22,8 +22,9 @@ dependency.
 > [!WARNING]
 > No internet-facing service is completely safe. Honey Spire reduces exposure
 > through Cowrie's emulated shell, non-root containers, read-only filesystems,
-> an isolated honeypot network, disabled outbound access, resource limits, and
-> automatic retention. Keep the host and Docker installation patched.
+> a honeypot network separated from the dashboard, one-byte download limits,
+> resource limits, and automatic retention. Keep the host and Docker
+> installation patched.
 
 ## Server requirements
 
