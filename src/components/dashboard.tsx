@@ -354,7 +354,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         </Card>
 
         <footer className="pb-4 text-center text-xs text-muted-foreground">
-          IP geolocation uses the free GeoLite2 data created by MaxMind.
+          Optional IP geolocation uses free GeoLite2 data created by MaxMind.
         </footer>
       </div>
     </main>

@@ -9,7 +9,7 @@ The dashboard includes:
 
 - Current attacks per minute and an adaptive live gauge
 - Historical attack volume charts
-- A live world map using free MaxMind GeoLite2 data
+- A live world map when free MaxMind GeoLite2 enrichment is configured
 - Top 20 source IPs, usernames, and passwords
 - The 20 most recent credential attempts
 - SSH client banners, HASSH fingerprints, and negotiated algorithms
@@ -32,7 +32,7 @@ dependency.
 - A public IPv4 address
 - Optional: a domain with an `A` record pointing to the server for trusted HTTPS
 - Ports 22, 80, 443, and 3001 permitted by the provider firewall
-- A free [MaxMind GeoLite2 account and license key](https://www.maxmind.com/en/geolite2/signup)
+- Optional: a free [MaxMind GeoLite2 account and license key](https://www.maxmind.com/en/geolite2/signup)
 
 The installer creates a 2 GB swap file when the server has less than 1 GB of
 existing swap. Structured events are retained for 90 days, raw terminal
@@ -51,7 +51,8 @@ The installer prompts for:
 
 - Optional dashboard domain; leave it blank to use the server's public IP
 - Administrator username and password
-- Free MaxMind GeoLite2 license key
+- Optional free MaxMind GeoLite2 license key; leave it blank to disable
+  geolocation and ASN enrichment
 - Optional Telegram bot token and channel ID
 
 It then installs Docker, moves the real SSH daemon to port 3001, verifies the
@@ -185,8 +186,10 @@ docker compose config --quiet
 
 Attempted credentials are sensitive. They are visible only after dashboard
 authentication, are excluded from Telegram summaries and operational logs, and
-are deleted according to the configured retention period. IP geolocation is
-performed locally; attacker IPs are not sent to a geolocation API.
+are deleted according to the configured retention period. When GeoLite2 is
+configured, IP geolocation is performed locally; attacker IPs are not sent to a
+geolocation API. Without a key, collection and all non-location dashboard
+features continue to work, while the map and location fields remain empty.
 
 This product includes GeoLite2 data created by MaxMind, available from
 [https://www.maxmind.com](https://www.maxmind.com).

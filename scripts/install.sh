@@ -142,8 +142,7 @@ prompt ADMIN_USERNAME "Dashboard administrator username" "admin"
 prompt_secret ADMIN_PASSWORD "Dashboard password (minimum 12 characters)"
 [[ "${#ADMIN_PASSWORD}" -ge 12 ]] ||
   fail "The dashboard password must contain at least 12 characters."
-prompt_secret MAXMIND_LICENSE_KEY "Free MaxMind GeoLite2 license key"
-[[ -n "$MAXMIND_LICENSE_KEY" ]] || fail "A GeoLite2 license key is required."
+prompt_secret MAXMIND_LICENSE_KEY "Free MaxMind GeoLite2 license key (leave blank to disable geolocation)"
 prompt TELEGRAM_BOT_TOKEN "Telegram bot token (leave blank to disable)" ""
 if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then
   prompt TELEGRAM_CHAT_ID "Telegram channel/chat ID"
