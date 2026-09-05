@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 REPOSITORY="${HONEY_SPIRE_REPOSITORY:-frnkst/honey-spire}"
-VERSION="${HONEY_SPIRE_VERSION:-main}"
+RELEASE_REF="${HONEY_SPIRE_VERSION:-main}"
 INSTALL_DIR="${HONEY_SPIRE_INSTALL_DIR:-/opt/honey-spire}"
 IMAGE="${HONEY_SPIRE_IMAGE:-ghcr.io/frnkst/honey-spire:latest}"
 SSH_PORT=3001
@@ -184,7 +184,7 @@ fi
 
 say "Downloading deployment files"
 mkdir -p "$INSTALL_DIR/deploy"
-BASE_URL="https://raw.githubusercontent.com/${REPOSITORY}/${VERSION}"
+BASE_URL="https://raw.githubusercontent.com/${REPOSITORY}/${RELEASE_REF}"
 curl -fsSL "$BASE_URL/compose.yaml" -o "$INSTALL_DIR/compose.yaml"
 curl -fsSL "$BASE_URL/deploy/Caddyfile" -o "$INSTALL_DIR/deploy/Caddyfile"
 curl -fsSL "$BASE_URL/deploy/cowrie.cfg" -o "$INSTALL_DIR/deploy/cowrie.cfg"
