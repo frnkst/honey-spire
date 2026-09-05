@@ -1,0 +1,27 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	reverse_proxy app:3000 {
+		header_up X-Real-IP {remote_host}
+		flush_interval -1
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 5MiB
+			roll_keep 2
+		}
+		format json
+	}
+}
