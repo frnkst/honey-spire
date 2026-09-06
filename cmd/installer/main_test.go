@@ -46,7 +46,7 @@ func TestQuickInstallDefaults(t *testing.T) {
 	if len(m.config.adminPassword) < 12 {
 		t.Fatal("generated password is too short")
 	}
-	if m.config.maxmindKey != "" || m.config.telegramBotToken != "" {
+	if m.config.maxmindAccountID != "" || m.config.maxmindKey != "" || m.config.telegramBotToken != "" {
 		t.Fatal("quick install must not configure integration keys")
 	}
 	if !m.config.generatedPassword {
@@ -89,6 +89,23 @@ func TestQuickConfigSurvivesAdvancedNavigation(t *testing.T) {
 
 	if m.config.adminUsername != "admin" || len(m.config.adminPassword) < 12 || !m.config.generatedPassword {
 		t.Fatal("quick install credentials were not restored after leaving advanced setup")
+	}
+}
+
+func TestMaxMindCredentialsRequireAccountAndKey(t *testing.T) {
+	fields := advancedFields()
+	account := fieldIndex(fields, "maxmind_account")
+	key := fieldIndex(fields, "maxmind_key")
+
+	fields[account].input.SetValue("not-numeric")
+	if err := validateField("maxmind_account", "not-numeric", fields); err == nil {
+		t.Fatal("expected a non-numeric account ID to fail validation")
+	}
+
+	fields[account].input.SetValue("123456")
+	fields[key].input.SetValue("")
+	if err := validateField("maxmind_key", "", fields); err == nil {
+		t.Fatal("expected a missing license key to fail validation")
 	}
 }
 

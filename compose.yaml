@@ -10,6 +10,7 @@ services:
       COWRIE_JSON_LOG: /data/cowrie/log/cowrie/cowrie.json
       COWRIE_TTY_DIR: /data/cowrie/log/cowrie
       GEOLITE_DIR: /data/geolite
+      MAXMIND_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID:-}
       MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}

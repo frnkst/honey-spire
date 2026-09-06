@@ -7,6 +7,37 @@ import { getConfig } from "@/lib/config";
 
 const editions = ["GeoLite2-City", "GeoLite2-ASN"] as const;
 
+export function resolveMaxMindCredentials(accountId: string, licenseKey: string) {
+  if (!accountId && licenseKey.includes(":")) {
+    const separator = licenseKey.indexOf(":");
+    return {
+      accountId: licenseKey.slice(0, separator),
+      licenseKey: licenseKey.slice(separator + 1),
+    };
+  }
+  return { accountId, licenseKey };
+}
+
+export function buildDownloadRequest(
+  edition: (typeof editions)[number],
+  accountId: string,
+  licenseKey: string,
+) {
+  const url = new URL(
+    `https://download.maxmind.com/geoip/databases/${edition}/download`,
+  );
+  url.searchParams.set("suffix", "tar.gz");
+  return {
+    url,
+    init: {
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${accountId}:${licenseKey}`).toString("base64")}`,
+      },
+      signal: AbortSignal.timeout(60_000),
+    },
+  };
+}
+
 async function findFile(directory: string, name: string): Promise<string | null> {
   for (const entry of await fs.promises.readdir(directory, {
     withFileTypes: true,
@@ -24,6 +55,7 @@ async function findFile(directory: string, name: string): Promise<string | null>
 
 async function downloadEdition(
   edition: (typeof editions)[number],
+  accountId: string,
   licenseKey: string,
 ) {
   const destination = getConfig().GEOLITE_DIR;
@@ -34,11 +66,8 @@ async function downloadEdition(
   const archivePath = path.join(temporaryDirectory, `${edition}.tar.gz`);
 
   try {
-    const url = new URL("https://download.maxmind.com/app/geoip_download");
-    url.searchParams.set("edition_id", edition);
-    url.searchParams.set("license_key", licenseKey);
-    url.searchParams.set("suffix", "tar.gz");
-    const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    const request = buildDownloadRequest(edition, accountId, licenseKey);
+    const response = await fetch(request.url, request.init);
     if (!response.ok || !response.body) {
       throw new Error(`GeoLite download returned HTTP ${response.status}`);
     }
@@ -71,9 +100,18 @@ async function downloadEdition(
 }
 
 export async function updateGeoLiteDatabases() {
-  const licenseKey = getConfig().MAXMIND_LICENSE_KEY;
-  if (!licenseKey) return;
+  const config = getConfig();
+  const { accountId, licenseKey } = resolveMaxMindCredentials(
+    config.MAXMIND_ACCOUNT_ID,
+    config.MAXMIND_LICENSE_KEY ?? "",
+  );
+  if (!accountId && !licenseKey) return;
+  if (!accountId || !licenseKey) {
+    throw new Error(
+      "GeoLite updates require both MAXMIND_ACCOUNT_ID and MAXMIND_LICENSE_KEY",
+    );
+  }
   for (const edition of editions) {
-    await downloadEdition(edition, licenseKey);
+    await downloadEdition(edition, accountId, licenseKey);
   }
 }

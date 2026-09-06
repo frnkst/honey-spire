@@ -6,6 +6,10 @@ const environmentSchema = z.object({
   COWRIE_JSON_LOG: z.string().default("./data/cowrie/cowrie.json"),
   COWRIE_TTY_DIR: z.string().default("./data/cowrie/tty"),
   GEOLITE_DIR: z.string().default("./data/geolite"),
+  MAXMIND_ACCOUNT_ID: z
+    .string()
+    .regex(/^$|^\d+$/, "MAXMIND_ACCOUNT_ID must be numeric")
+    .default(""),
   MAXMIND_LICENSE_KEY: z.string().optional(),
   ADMIN_USERNAME: z.string().min(1).default("admin"),
   ADMIN_PASSWORD_HASH: z.string().optional(),

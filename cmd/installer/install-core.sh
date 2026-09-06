@@ -147,9 +147,14 @@ trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 require_configuration
 DOMAIN="${DOMAIN:-}"
+MAXMIND_ACCOUNT_ID="${MAXMIND_ACCOUNT_ID:-}"
 MAXMIND_LICENSE_KEY="${MAXMIND_LICENSE_KEY:-}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
+if [[ -n "$MAXMIND_ACCOUNT_ID" || -n "$MAXMIND_LICENSE_KEY" ]]; then
+  [[ -n "$MAXMIND_ACCOUNT_ID" && -n "$MAXMIND_LICENSE_KEY" ]] ||
+    fail "Both the MaxMind account ID and license key are required for GeoLite."
+fi
 
 step "Checking server compatibility"
 [[ "$(uname -s)" == "Linux" ]] || fail "Honey Spire supports Linux only."
@@ -258,6 +263,7 @@ SESSION_SECRET="$(openssl rand -hex 32)"
   printf 'ADMIN_PASSWORD_HASH=%s\n' "$(env_quote "$ADMIN_PASSWORD_HASH")"
   printf 'SESSION_SECRET=%s\n' "$(env_quote "$SESSION_SECRET")"
   printf 'SECURE_COOKIES=%s\n' "$SECURE_COOKIES"
+  printf 'MAXMIND_ACCOUNT_ID=%s\n' "$(env_quote "$MAXMIND_ACCOUNT_ID")"
   printf 'MAXMIND_LICENSE_KEY=%s\n' "$(env_quote "$MAXMIND_LICENSE_KEY")"
   printf 'TELEGRAM_BOT_TOKEN=%s\n' "$(env_quote "$TELEGRAM_BOT_TOKEN")"
   printf 'TELEGRAM_CHAT_ID=%s\n' "$(env_quote "$TELEGRAM_CHAT_ID")"
@@ -267,7 +273,8 @@ SESSION_SECRET="$(openssl rand -hex 32)"
   printf 'RAW_SESSION_RETENTION_DAYS=7\n'
 } >"$INSTALL_DIR/.env"
 chmod 600 "$INSTALL_DIR/.env"
-unset ADMIN_PASSWORD_HASH SESSION_SECRET MAXMIND_LICENSE_KEY TELEGRAM_BOT_TOKEN
+unset ADMIN_PASSWORD_HASH SESSION_SECRET MAXMIND_ACCOUNT_ID MAXMIND_LICENSE_KEY
+unset TELEGRAM_BOT_TOKEN
 
 step "Opening required firewall ports"
 open_firewall_port "$SSH_PORT"

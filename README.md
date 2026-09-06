@@ -37,7 +37,7 @@ The dashboard includes:
 - A public IPv4 address
 - Optional: a domain with an `A` record pointing to the server for trusted HTTPS
 - Ports 22, 80, 443, and 3001 permitted by the provider firewall
-- Optional: a free [MaxMind GeoLite2 account and license key](https://www.maxmind.com/en/geolite2/signup)
+- Optional: a free [MaxMind GeoLite2 account ID and license key](https://www.maxmind.com/en/geolite2/signup)
 
 ## Install
 
@@ -60,6 +60,13 @@ one.
 
 Review remote scripts before executing them if required by your security
 policy.
+
+## GeoLite2 setup
+
+Advanced installation asks for the numeric **MaxMind account ID** and the
+associated **license key** as separate values. Honey Spire uses both values for
+HTTP Basic authentication when downloading the GeoLite2 City and ASN
+databases. Do not enter the account password.
 
 ## Telegram setup
 

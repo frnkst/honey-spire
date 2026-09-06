@@ -39,6 +39,7 @@ type installConfig struct {
 	domain            string
 	adminUsername     string
 	adminPassword     string
+	maxmindAccountID  string
 	maxmindKey        string
 	telegramBotToken  string
 	telegramChatID    string
@@ -171,7 +172,8 @@ func advancedFields() []formField {
 		newField("domain", "Dashboard domain", "Optional. Leave blank to use this server's public IPv4 address.", "honeypot.example.com", false, ""),
 		newField("username", "Administrator username", "Used to sign in to the threat dashboard.", "admin", false, "admin"),
 		newField("password", "Administrator password", "At least 12 characters. It is never written to the installer log.", "Minimum 12 characters", true, ""),
-		newField("maxmind", "MaxMind GeoLite2 key", "Optional. Enables country, city, ASN, and world-map enrichment.", "Leave blank to disable", true, ""),
+		newField("maxmind_account", "MaxMind account ID", "Optional. Enter the numeric account ID used for GeoLite database downloads.", "Leave blank to disable GeoLite", false, ""),
+		newField("maxmind_key", "MaxMind license key", "Required with the account ID. The key is never written to the installer log.", "GeoLite license key", true, ""),
 		newField("telegram_token", "Telegram bot token", "Optional. Enables scheduled and on-demand threat summaries.", "Leave blank to disable", true, ""),
 		newField("telegram_chat", "Telegram chat or channel", "Required only when a bot token is configured.", "@channel or numeric chat ID", false, ""),
 	}
@@ -299,7 +301,10 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.fields[m.fieldIndex].input.Blur()
 
-		if m.fields[m.fieldIndex].key == "telegram_token" && value == "" {
+		if m.fields[m.fieldIndex].key == "maxmind_account" && value == "" {
+			m.fields[m.fieldIndex+1].input.SetValue("")
+			m.fieldIndex += 2
+		} else if m.fields[m.fieldIndex].key == "telegram_token" && value == "" {
 			m.fields[len(m.fields)-1].input.SetValue("")
 			m.fieldIndex = len(m.fields)
 		} else {
@@ -325,9 +330,9 @@ func (m model) updateReview(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.config.mode == "advanced" {
 			m.screen = screenField
-			m.fieldIndex = len(m.fields) - 1
-			if strings.TrimSpace(m.fields[4].input.Value()) == "" {
-				m.fieldIndex = 4
+			m.fieldIndex = fieldIndex(m.fields, "telegram_chat")
+			if fieldValue(m.fields, "telegram_token") == "" {
+				m.fieldIndex = fieldIndex(m.fields, "telegram_token")
 			}
 			m.fields[m.fieldIndex].input.Focus()
 			return m, textinput.Blink
@@ -354,7 +359,8 @@ func configFromFields(fields []formField) installConfig {
 		domain:           values["domain"],
 		adminUsername:    values["username"],
 		adminPassword:    values["password"],
-		maxmindKey:       values["maxmind"],
+		maxmindAccountID: values["maxmind_account"],
+		maxmindKey:       values["maxmind_key"],
 		telegramBotToken: values["telegram_token"],
 		telegramChatID:   values["telegram_chat"],
 	}
@@ -374,8 +380,16 @@ func validateField(key, value string, fields []formField) error {
 		if len(value) < 12 {
 			return fmt.Errorf("password must contain at least 12 characters")
 		}
+	case "maxmind_account":
+		if value != "" && !regexp.MustCompile(`^\d+$`).MatchString(value) {
+			return fmt.Errorf("MaxMind account ID must contain only numbers")
+		}
+	case "maxmind_key":
+		if fieldValue(fields, "maxmind_account") != "" && value == "" {
+			return fmt.Errorf("enter the license key for this MaxMind account")
+		}
 	case "telegram_chat":
-		token := strings.TrimSpace(fields[4].input.Value())
+		token := fieldValue(fields, "telegram_token")
 		if token != "" && value == "" {
 			return fmt.Errorf("enter the chat ID, or go back and clear the bot token")
 		}
@@ -384,6 +398,23 @@ func validateField(key, value string, fields []formField) error {
 		}
 	}
 	return nil
+}
+
+func fieldIndex(fields []formField, key string) int {
+	for index, field := range fields {
+		if field.key == key {
+			return index
+		}
+	}
+	return -1
+}
+
+func fieldValue(fields []formField, key string) string {
+	index := fieldIndex(fields, key)
+	if index < 0 {
+		return ""
+	}
+	return strings.TrimSpace(fields[index].input.Value())
 }
 
 func validDomain(value string) bool {
@@ -442,6 +473,7 @@ func runInstaller(config installConfig, events chan<- tea.Msg) {
 		"DOMAIN="+config.domain,
 		"ADMIN_USERNAME="+config.adminUsername,
 		"ADMIN_PASSWORD="+config.adminPassword,
+		"MAXMIND_ACCOUNT_ID="+config.maxmindAccountID,
 		"MAXMIND_LICENSE_KEY="+config.maxmindKey,
 		"TELEGRAM_BOT_TOKEN="+config.telegramBotToken,
 		"TELEGRAM_CHAT_ID="+config.telegramChatID,
@@ -642,7 +674,7 @@ func (m model) reviewView(width int) string {
 		summaryRow("PROFILE", strings.ToUpper(m.config.mode)),
 		summaryRow("DASHBOARD", valueOr(m.config.domain, "Automatic public IPv4")),
 		summaryRow("ADMIN", m.config.adminUsername),
-		summaryRow("GEOIP", configuredLabel(m.config.maxmindKey)),
+		summaryRow("GEOIP", configuredLabel(m.config.maxmindAccountID)),
 		summaryRow("TELEGRAM", configuredLabel(m.config.telegramBotToken)),
 		summaryRow("REAL SSH", "Port 3001"),
 		summaryRow("HONEYPOT", "Port 22"),
