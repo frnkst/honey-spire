@@ -1,21 +1,65 @@
 import { getConfig } from "@/lib/config";
-import { getAttackCountSince, getDashboardData } from "@/lib/db";
+import { getDashboardData, getTelegramDetails } from "@/lib/db";
 
-export async function sendTelegramSummary(period: "hourly" | "daily") {
+type TelegramPeriod = "hourly" | "daily" | "ad-hoc";
+
+function rankedLines(
+  values: { value: string; count: number }[],
+  emptyMessage: string,
+) {
+  return values.length
+    ? values
+        .slice(0, 5)
+        .map((item, index) => `${index + 1}. ${item.value || "(empty)"} — ${item.count}`)
+    : [emptyMessage];
+}
+
+export async function sendTelegramSummary(period: TelegramPeriod) {
   const config = getConfig();
-  if (!config.TELEGRAM_BOT_TOKEN || !config.TELEGRAM_CHAT_ID) return;
+  if (!config.TELEGRAM_BOT_TOKEN || !config.TELEGRAM_CHAT_ID) return false;
 
-  const duration = period === "hourly" ? 60 * 60_000 : 24 * 60 * 60_000;
-  const data = getDashboardData(period === "hourly" ? "1h" : "24h");
-  const count = getAttackCountSince(Date.now() - duration);
-  const topIp = data.topIps[0];
-  const topUsername = data.topUsernames[0];
+  const hourly = period === "hourly";
+  const range = hourly ? "1h" : "24h";
+  const duration = hourly ? 60 * 60_000 : 24 * 60 * 60_000;
+  const data = getDashboardData(range);
+  const details = getTelegramDetails(Date.now() - duration);
+  const title =
+    period === "ad-hoc" ? "on-demand report" : `${period} summary`;
+  const recentAttempts = details.recentAttacks.map((attack) => {
+    const location = [attack.city, attack.countryCode].filter(Boolean).join(", ");
+    const client = attack.clientVersion ?? "unknown client";
+    return `${attack.successful ? "✅" : "❌"} ${attack.sourceIp} · ${attack.username || "(empty)"} · ${location || "unknown location"} · ${client}`;
+  });
+  const recentCommands = details.recentCommands.map(
+    (command) =>
+      `${command.sourceIp} · ${command.username || "(unknown)"} · ${command.command}`,
+  );
   const message = [
-    `🍯 Honey Spire ${period} summary`,
-    `Attacks: ${count}`,
-    `Current rate: ${data.currentRate}/min`,
-    `Top IP: ${topIp ? `${topIp.value} (${topIp.count})` : "none"}`,
-    `Top username: ${topUsername ? `${topUsername.value} (${topUsername.count})` : "none"}`,
+    `🍯 Honey Spire ${title}`,
+    `Window: last ${hourly ? "60 minutes" : "24 hours"}`,
+    `Generated: ${new Date().toISOString()}`,
+    "",
+    "📊 Activity",
+    `Login attempts: ${details.attempts}`,
+    `Unique source IPs: ${details.uniqueIps}`,
+    `Accepted honeypot sessions: ${details.successfulLogins}`,
+    `Commands captured: ${details.commandTotal}`,
+    `Current rate: ${data.currentRate}/min (previous: ${data.previousRate}/min)`,
+    "",
+    "🌐 Top source IPs",
+    ...rankedLines(data.topIps, "No source IPs"),
+    "",
+    "👤 Top usernames",
+    ...rankedLines(data.topUsernames, "No usernames"),
+    "",
+    "🗺️ Top countries",
+    ...rankedLines(details.topCountries, "No geolocation data"),
+    "",
+    "🕒 Recent login attempts",
+    ...(recentAttempts.length ? recentAttempts : ["No recent login attempts"]),
+    "",
+    "⌨️ Recent commands",
+    ...(recentCommands.length ? recentCommands : ["No commands captured"]),
   ].join("\n");
 
   const response = await fetch(
@@ -25,7 +69,7 @@ export async function sendTelegramSummary(period: "hourly" | "daily") {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chat_id: config.TELEGRAM_CHAT_ID,
-        text: message,
+        text: message.slice(0, 4096),
         disable_web_page_preview: true,
       }),
       signal: AbortSignal.timeout(10_000),
@@ -34,4 +78,5 @@ export async function sendTelegramSummary(period: "hourly" | "daily") {
   if (!response.ok) {
     throw new Error(`Telegram returned HTTP ${response.status}`);
   }
+  return true;
 }

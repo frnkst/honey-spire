@@ -27,8 +27,20 @@ jobs:
 
   compose:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: cp .env.example .env
+      - run: |
+          cp .env.example .env
+          echo "HONEYPOT_SSH_PORT=2222" >> .env
+      - run: python3 -m py_compile deploy/sitecustomize.py
+      - run: python3 scripts/test-cowrie-customization.py
+      - run: bash -n scripts/install.sh
       - run: docker compose config --quiet
+      - run: docker compose up -d --wait cowrie
+      - name: Test global Cowrie admission policy
+        run: |
+          docker compose exec -T cowrie python -c \
+            "from cowrie.core import auth; policy=auth.AuthGlobal(); accepted=[policy.checklogin(b'user', str(i).encode(), '192.0.2.' + str(i % 250)) for i in range(550)]; assert sum(accepted) == 1"
+      - if: always()
+        run: docker compose down --volumes

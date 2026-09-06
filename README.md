@@ -12,15 +12,16 @@ The dashboard includes:
 - A live world map when free MaxMind GeoLite2 enrichment is configured
 - Top 20 source IPs, usernames, and passwords
 - The 20 most recent credential attempts
-- The first command entered in each of the 20 most recent emulated sessions
+- Up to ten commands from each accepted emulated session
 - SSH client banners, HASSH fingerprints, and negotiated algorithms
-- Configurable hourly and daily Telegram summaries
+- Detailed, configurable hourly, daily, and on-demand Telegram reports
+- An authenticated **Send to Telegram** dashboard action
 
-Cowrie intentionally accepts many credential combinations so it can capture
-commands in its emulated shell. Each source IP must submit nine distinct
-credential combinations before the tenth distinct attempt is accepted. Honey
-Spire stores only the first shell command from each session. Cowrie never
-grants access to the host system.
+Cowrie accepts one login after a randomized global interval of 450–550 password
+attempts. The counter is shared across every source IP, so even a client's first
+attempt can be accepted when it lands on the global threshold. IP addresses are
+never blocked and can continue trying indefinitely. Accepted sessions close
+after capturing ten commands. Cowrie never grants access to the host system.
 
 The web interface uses Next.js, shadcn/ui, Tailwind CSS, and Apache ECharts.
 SQLite stores all structured telemetry; there is no PostgreSQL or Redis
@@ -99,9 +100,12 @@ policy.
 3. Use the numeric channel ID or an `@channel_name` as the chat ID.
 4. Enter both values when the installer prompts.
 
-Summaries contain counts and top indicators, but never attempted passwords.
-Hourly and daily delivery state is persisted in SQLite, so restarts do not
-produce duplicate summaries.
+Reports include login and shell totals, unique sources, current and previous
+rates, top IPs, usernames and countries, recent login details, and recent
+commands. Attempted passwords are never sent to Telegram. Hourly and daily
+delivery state is persisted in SQLite, so restarts do not produce duplicate
+summaries. Use **Send to Telegram** in the dashboard header for an immediate
+24-hour report.
 
 ## Operations
 
@@ -115,6 +119,35 @@ sudo docker compose logs --tail=100 cowrie
 sudo docker compose pull
 sudo docker compose up -d
 ```
+
+### Update an existing installation
+
+Deployment configuration lives outside the application image, so update it
+alongside the container:
+
+```bash
+cd /opt/honey-spire
+BASE=https://raw.githubusercontent.com/frnkst/honey-spire/main
+sudo curl -fsSL "$BASE/compose.yaml" -o compose.yaml
+sudo curl -fsSL "$BASE/deploy/Caddyfile" -o deploy/Caddyfile
+sudo curl -fsSL "$BASE/deploy/cowrie.cfg" -o deploy/cowrie.cfg
+sudo curl -fsSL "$BASE/deploy/sitecustomize.py" -o deploy/sitecustomize.py
+sudo docker compose pull
+sudo docker compose up -d --remove-orphans
+```
+
+### Inspect the admission counter
+
+Cowrie chooses the next successful login after each admission, between 450 and
+550 global attempts later. Inspect the counter without exposing credentials:
+
+```bash
+cd /opt/honey-spire
+sudo docker compose exec -T cowrie \
+  cat var/lib/cowrie/auth_global.json
+```
+
+The file contains only the total attempt count and next admission threshold.
 
 ### Backup
 

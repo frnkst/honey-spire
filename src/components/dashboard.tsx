@@ -4,10 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
+  Check,
   Clock3,
   Globe2,
   LogOut,
+  LoaderCircle,
   Radio,
+  Send,
   ShieldAlert,
   TerminalSquare,
 } from "lucide-react";
@@ -130,6 +133,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const [data, setData] = useState(initialData);
   const [range, setRange] = useState(initialData.range);
   const [connected, setConnected] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<
+    "idle" | "sending" | "sent" | "error"
+  >("idle");
+  const [telegramError, setTelegramError] = useState("");
 
   const refresh = useCallback(async (selectedRange: string) => {
     const response = await fetch(`/api/dashboard?range=${selectedRange}`, {
@@ -173,6 +180,26 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     router.refresh();
   }
 
+  async function sendTelegramUpdate() {
+    setTelegramStatus("sending");
+    setTelegramError("");
+    try {
+      const response = await fetch("/api/telegram", { method: "POST" });
+      if (response.ok) {
+        setTelegramStatus("sent");
+        return;
+      }
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      setTelegramError(body?.error ?? "Send failed.");
+      setTelegramStatus("error");
+    } catch {
+      setTelegramError("Could not reach the server.");
+      setTelegramStatus("error");
+    }
+  }
+
   const delta = data.currentRate - data.previousRate;
 
   return (
@@ -192,6 +219,29 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               <Radio className={connected ? "animate-pulse" : ""} />
               {connected ? "Live" : "Reconnecting"}
             </Badge>
+            <Button
+              aria-label="Send update to Telegram"
+              disabled={telegramStatus === "sending"}
+              onClick={sendTelegramUpdate}
+              size="sm"
+              title={telegramStatus === "error" ? telegramError : undefined}
+              variant="outline"
+            >
+              {telegramStatus === "sending" ? (
+                <LoaderCircle className="animate-spin" />
+              ) : telegramStatus === "sent" ? (
+                <Check />
+              ) : (
+                <Send />
+              )}
+              <span className="hidden sm:inline">
+                {telegramStatus === "sent"
+                  ? "Update sent"
+                  : telegramStatus === "error"
+                    ? telegramError
+                    : "Send to Telegram"}
+              </span>
+            </Button>
             <Button
               aria-label="Log out"
               onClick={logout}
@@ -304,7 +354,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 font-heading text-base">
               <TerminalSquare className="size-4 text-secondary" />
-              First command per session
+              Commands
             </CardTitle>
             <Badge variant="outline">{data.recentCommands.length} recent</Badge>
           </CardHeader>
@@ -345,7 +395,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                       className="h-28 text-center text-muted-foreground"
                       colSpan={4}
                     >
-                      The first command entered in each emulated shell appears here.
+                      Commands entered in emulated shells appear here.
                     </TableCell>
                   </TableRow>
                 )}

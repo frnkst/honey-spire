@@ -215,9 +215,9 @@ export function insertCommand(
       `INSERT OR IGNORE INTO command_events
         (occurred_at, session_id, source_ip, command)
        SELECT @occurredAt, @sessionId, @sourceIp, @command
-       WHERE NOT EXISTS (
-         SELECT 1 FROM command_events WHERE session_id = @sessionId
-       )`,
+       WHERE (
+         SELECT COUNT(*) FROM command_events WHERE session_id = @sessionId
+       ) < 10`,
     )
     .run(command);
   if (result.changes === 0) return null;
@@ -297,13 +297,8 @@ export function getDashboardData(range = "24h"): DashboardData {
           LIMIT 1
         ), '') AS username
        FROM command_events c
-       WHERE c.id = (
-         SELECT MIN(first_command.id)
-         FROM command_events first_command
-         WHERE first_command.session_id = c.session_id
-       )
        ORDER BY c.occurred_at DESC
-       LIMIT 20`,
+       LIMIT 200`,
     )
     .all() as Record<string, unknown>[];
   const mapRows = db
@@ -377,4 +372,76 @@ export function getAttackCountSince(since: number): number {
     .prepare(`SELECT COUNT(*) AS count FROM attacks WHERE occurred_at >= ?`)
     .get(since) as { count: number };
   return Number(row.count);
+}
+
+export function getTelegramDetails(since: number) {
+  const db = getDatabase();
+  const totals = db
+    .prepare(
+      `SELECT
+         COUNT(*) AS attempts,
+         COUNT(DISTINCT source_ip) AS unique_ips,
+         SUM(successful) AS successful_logins
+       FROM attacks
+       WHERE occurred_at >= ?`,
+    )
+    .get(since) as {
+    attempts: number;
+    unique_ips: number;
+    successful_logins: number | null;
+  };
+  const commandTotal = db
+    .prepare(
+      `SELECT COUNT(*) AS count FROM command_events WHERE occurred_at >= ?`,
+    )
+    .get(since) as { count: number };
+  const topCountries = db
+    .prepare(
+      `SELECT COALESCE(country_name, 'Unknown') AS value, COUNT(*) AS count
+       FROM attacks
+       WHERE occurred_at >= ?
+       GROUP BY COALESCE(country_name, 'Unknown')
+       ORDER BY count DESC, value ASC
+       LIMIT 5`,
+    )
+    .all(since)
+    .map((row) => {
+      const value = row as { value: string; count: number };
+      return { value: value.value, count: Number(value.count) };
+    });
+  const recentAttacks = db
+    .prepare(
+      `SELECT * FROM attacks
+       WHERE occurred_at >= ?
+       ORDER BY occurred_at DESC
+       LIMIT 5`,
+    )
+    .all(since)
+    .map((row) => rowToAttack(row as Record<string, unknown>));
+  const recentCommands = db
+    .prepare(
+      `SELECT
+         c.*,
+         COALESCE((
+           SELECT a.username FROM attacks a
+           WHERE a.session_id = c.session_id
+           ORDER BY a.occurred_at DESC LIMIT 1
+         ), '') AS username
+       FROM command_events c
+       WHERE c.occurred_at >= ?
+       ORDER BY c.occurred_at DESC
+       LIMIT 5`,
+    )
+    .all(since)
+    .map((row) => rowToCommand(row as Record<string, unknown>));
+
+  return {
+    attempts: Number(totals.attempts),
+    uniqueIps: Number(totals.unique_ips),
+    successfulLogins: Number(totals.successful_logins ?? 0),
+    commandTotal: Number(commandTotal.count),
+    topCountries,
+    recentAttacks,
+    recentCommands,
+  };
 }

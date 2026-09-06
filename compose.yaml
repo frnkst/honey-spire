@@ -59,11 +59,14 @@ services:
   cowrie:
     image: cowrie/cowrie:3.0.13
     restart: unless-stopped
+    environment:
+      PYTHONPATH: /customizations
     ports:
       - "${HONEYPOT_SSH_PORT:-22}:2222"
     volumes:
       - cowrie-data:/cowrie/cowrie-git/var
       - ./deploy/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./deploy/sitecustomize.py:/customizations/sitecustomize.py:ro
     networks:
       - honeypot
     mem_limit: 160m
@@ -81,6 +84,18 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     logging:
       driver: local
       options:

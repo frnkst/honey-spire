@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { processCowrieRecord } from "@/lib/cowrie";
-import { getDashboardData } from "@/lib/db";
+import { getDashboardData, getTelegramDetails } from "@/lib/db";
 
 beforeAll(() => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "honey-spire-test-"));
@@ -64,15 +64,23 @@ describe("Cowrie telemetry", () => {
       username: "root",
       command: "uname -a",
     });
-    await processCowrieRecord({
-      eventid: "cowrie.command.input",
-      session,
-      timestamp: new Date().toISOString(),
-      src_ip: "203.0.113.10",
-      input: "cat /etc/passwd",
+    for (let index = 2; index <= 12; index += 1) {
+      await processCowrieRecord({
+        eventid: "cowrie.command.input",
+        session,
+        timestamp: new Date(Date.now() + index).toISOString(),
+        src_ip: "203.0.113.10",
+        input: `command-${index}`,
+      });
+    }
+    expect(getDashboardData("1h").recentCommands).toHaveLength(10);
+    expect(getDashboardData("1h").recentCommands[0].command).toBe("command-10");
+    expect(getTelegramDetails(Date.now() - 60_000)).toMatchObject({
+      attempts: 1,
+      uniqueIps: 1,
+      successfulLogins: 0,
+      commandTotal: 10,
     });
-    expect(getDashboardData("1h").recentCommands).toHaveLength(1);
-    expect(getDashboardData("1h").recentCommands[0].command).toBe("uname -a");
 
     await processCowrieRecord({
       eventid: "cowrie.login.failed",

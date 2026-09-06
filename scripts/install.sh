@@ -254,7 +254,11 @@ BASE_URL="https://raw.githubusercontent.com/${REPOSITORY}/${RELEASE_REF}"
 curl -fsSL "$BASE_URL/compose.yaml" -o "$INSTALL_DIR/compose.yaml"
 curl -fsSL "$BASE_URL/deploy/Caddyfile" -o "$INSTALL_DIR/deploy/Caddyfile"
 curl -fsSL "$BASE_URL/deploy/cowrie.cfg" -o "$INSTALL_DIR/deploy/cowrie.cfg"
-chmod 644 "$INSTALL_DIR/deploy/cowrie.cfg"
+curl -fsSL "$BASE_URL/deploy/sitecustomize.py" \
+  -o "$INSTALL_DIR/deploy/sitecustomize.py"
+chmod 644 \
+  "$INSTALL_DIR/deploy/cowrie.cfg" \
+  "$INSTALL_DIR/deploy/sitecustomize.py"
 
 say "Preparing application secrets"
 pull_application_image
@@ -353,6 +357,9 @@ done
   fail "The Honey Spire application did not start."
 docker compose ps --status running --services | grep -qx cowrie ||
   fail "The Cowrie honeypot did not start."
+docker compose exec -T cowrie python -c \
+  "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')" ||
+  fail "Cowrie started without the Honey Spire global authentication policy."
 docker compose port cowrie 2222 | grep -q ':22$' ||
   fail "Docker did not publish Cowrie on host port 22."
 timeout 5 bash -c '</dev/tcp/127.0.0.1/22' ||
@@ -362,7 +369,17 @@ docker compose ps --status running --services | grep -qx caddy ||
 
 SSH_CHANGED=0
 trap - ERR
-say "Honey Spire is running at ${DASHBOARD_URL}"
-printf '\nReal SSH now listens on port %s. Open a second terminal and verify:\n' "$SSH_PORT"
-printf '  ssh -p %s %s@%s\n\n' "$SSH_PORT" "${SUDO_USER:-root}" "$SSH_HOST"
-printf 'Keep this terminal open until that connection succeeds.\n'
+printf '\n\033[1;32m============================================================\n'
+printf '  HONEY SPIRE DEPLOYED SUCCESSFULLY\n'
+printf '============================================================\033[0m\n\n'
+printf 'Dashboard:\n'
+printf '  \033[1;36m%s\033[0m\n\n' "$DASHBOARD_URL"
+printf 'Honeypot SSH is listening for attacks on port 22.\n\n'
+printf 'Your real SSH service has moved to port %s.\n' "$SSH_PORT"
+printf 'Open a second terminal and verify access with:\n'
+printf '  \033[1;33mssh -p %s %s@%s\033[0m\n\n' \
+  "$SSH_PORT" "${SUDO_USER:-root}" "$SSH_HOST"
+printf 'Keep this terminal open until the SSH command above succeeds.\n'
+printf '\nCowrie admits roughly one in every 500 global login attempts.\n'
+printf 'Accepted sessions are isolated and close after capturing ten commands.\n'
+printf 'Installer log: %s\n\n' "$LOG_FILE"
