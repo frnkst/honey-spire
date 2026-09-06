@@ -6,6 +6,37 @@ import * as tar from "tar";
 import { getConfig } from "@/lib/config";
 
 const editions = ["GeoLite2-City", "GeoLite2-ASN"] as const;
+const gzipMagic = Buffer.from([0x1f, 0x8b]);
+const mmdbMetadataMarker = Buffer.from("abcdef4d61784d696e642e636f6d", "hex");
+
+interface BinaryWriter {
+  write(
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+    position: null,
+  ): Promise<{ bytesWritten: number }>;
+}
+
+export async function writeFully(
+  writer: BinaryWriter,
+  chunk: Uint8Array,
+): Promise<number> {
+  let offset = 0;
+  while (offset < chunk.byteLength) {
+    const { bytesWritten } = await writer.write(
+      chunk,
+      offset,
+      chunk.byteLength - offset,
+      null,
+    );
+    if (bytesWritten <= 0) {
+      throw new Error("GeoLite download stopped before the response was complete");
+    }
+    offset += bytesWritten;
+  }
+  return offset;
+}
 
 export function resolveMaxMindCredentials(accountId: string, licenseKey: string) {
   if (!accountId && licenseKey.includes(":")) {
@@ -72,19 +103,64 @@ async function downloadEdition(
       throw new Error(`GeoLite download returned HTTP ${response.status}`);
     }
     const archive = await fs.promises.open(archivePath, "w", 0o600);
+    let downloadedBytes = 0;
     try {
       const reader = response.body.getReader();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        await archive.write(value);
+        downloadedBytes += await writeFully(archive, value);
       }
     } finally {
       await archive.close();
     }
+    const expectedBytes = Number(response.headers.get("content-length"));
+    if (
+      Number.isFinite(expectedBytes) &&
+      expectedBytes > 0 &&
+      downloadedBytes !== expectedBytes
+    ) {
+      throw new Error(
+        `GeoLite download was incomplete: received ${downloadedBytes} of ${expectedBytes} bytes`,
+      );
+    }
+    const archiveHeader = Buffer.alloc(gzipMagic.length);
+    const archiveHandle = await fs.promises.open(archivePath, "r");
+    try {
+      await archiveHandle.read(archiveHeader, 0, archiveHeader.length, 0);
+    } finally {
+      await archiveHandle.close();
+    }
+    if (!archiveHeader.equals(gzipMagic)) {
+      throw new Error("GeoLite download was not a gzip archive");
+    }
     await tar.x({ file: archivePath, cwd: temporaryDirectory });
     const database = await findFile(temporaryDirectory, `${edition}.mmdb`);
     if (!database) throw new Error(`${edition}.mmdb was not in the archive`);
+    const databaseStat = await fs.promises.stat(
+      /* turbopackIgnore: true */ database,
+    );
+    const trailerSize = Math.min(databaseStat.size, 128 * 1024);
+    const trailer = Buffer.alloc(trailerSize);
+    const databaseHandle = await fs.promises.open(
+      /* turbopackIgnore: true */ database,
+      "r",
+    );
+    try {
+      await databaseHandle.read(
+        trailer,
+        0,
+        trailer.length,
+        databaseStat.size - trailerSize,
+      );
+    } finally {
+      await databaseHandle.close();
+    }
+    if (!trailer.includes(mmdbMetadataMarker)) {
+      throw new Error(
+        `${edition}.mmdb is incomplete: metadata marker missing from ${databaseStat.size} bytes`,
+      );
+    }
     await maxmind.open(database);
     await fs.promises.copyFile(
       database,

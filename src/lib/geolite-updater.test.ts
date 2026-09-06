@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDownloadRequest,
   resolveMaxMindCredentials,
+  writeFully,
 } from "@/lib/geolite-updater";
 
 describe("buildDownloadRequest", () => {
@@ -27,5 +28,23 @@ describe("buildDownloadRequest", () => {
       accountId: "123456",
       licenseKey: "license-key",
     });
+  });
+
+  it("retries partial writes until a complete response chunk is stored", async () => {
+    const writes: Buffer[] = [];
+    const writer = {
+      async write(
+        chunk: Uint8Array,
+        offset: number,
+        length: number,
+      ): Promise<{ bytesWritten: number }> {
+        const bytesWritten = Math.min(2, length);
+        writes.push(Buffer.from(chunk.subarray(offset, offset + bytesWritten)));
+        return { bytesWritten };
+      },
+    };
+
+    await expect(writeFully(writer, Buffer.from("abcdef"))).resolves.toBe(6);
+    expect(Buffer.concat(writes).toString()).toBe("abcdef");
   });
 });
