@@ -39,22 +39,26 @@ export function LoginForm() {
   }
 
   return (
-    <form className="space-y-4" onSubmit={submit}>
-      <div className="space-y-2">
-        <Label htmlFor="username">Username</Label>
+    <form className="space-y-5" onSubmit={submit}>
+      <div className="space-y-2.5">
+        <Label className="data-label" htmlFor="username">Operator ID</Label>
         <Input
           autoComplete="username"
+          className="h-11 rounded-sm border-white/10 bg-black/20 px-3 font-mono focus-visible:border-primary/60 focus-visible:ring-primary/15"
           id="username"
           name="username"
+          placeholder="admin"
           required
         />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+      <div className="space-y-2.5">
+        <Label className="data-label" htmlFor="password">Access key</Label>
         <Input
           autoComplete="current-password"
+          className="h-11 rounded-sm border-white/10 bg-black/20 px-3 font-mono focus-visible:border-primary/60 focus-visible:ring-primary/15"
           id="password"
           name="password"
+          placeholder="••••••••••••"
           required
           type="password"
         />
@@ -64,7 +68,7 @@ export function LoginForm() {
           {error}
         </p>
       ) : null}
-      <Button className="w-full" disabled={submitting} type="submit">
+      <Button className="h-11 w-full rounded-sm font-mono text-xs uppercase tracking-[.14em]" disabled={submitting} type="submit">
         {submitting ? (
           <LoaderCircle className="animate-spin" />
         ) : (

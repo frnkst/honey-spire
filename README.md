@@ -5,6 +5,19 @@ a single Linux server with **1 GB RAM, 1 vCPU, and 25 GB storage**. Cowrie
 emulates an SSH server on port 22 while the real host SSH service moves to port
 3001.
 
+![Honey Spire threat dashboard](docs/screenshots/dashboard-desktop.jpg)
+
+<table>
+  <tr>
+    <td width="32%"><strong>Mobile operations view</strong></td>
+    <td width="68%"><strong>Operator access</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/dashboard-mobile.jpg" alt="Honey Spire mobile dashboard"></td>
+    <td><img src="docs/screenshots/login-desktop.jpg" alt="Honey Spire operator login"></td>
+  </tr>
+</table>
+
 The dashboard includes:
 
 - Current attacks per minute and an adaptive live gauge

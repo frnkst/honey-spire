@@ -38,13 +38,24 @@ function useChart(option: EChartsOption, dependencies: unknown[]) {
 export function AttackTrend({ data }: { data: DashboardData }) {
   const ref = useChart(
     {
-      animationDuration: 700,
-      grid: { left: 38, right: 14, top: 18, bottom: 30 },
+      animationDuration: 900,
+      animationEasing: "cubicOut",
+      grid: { left: 46, right: 18, top: 28, bottom: 34 },
       tooltip: {
         trigger: "axis",
-        backgroundColor: "#1F1F22",
-        borderColor: "rgba(242,201,76,.3)",
-        textStyle: { color: "#F7F7F7" },
+        backgroundColor: "rgba(12,13,11,.96)",
+        borderColor: "rgba(255,194,71,.35)",
+        borderWidth: 1,
+        padding: [10, 12],
+        textStyle: {
+          color: "#F1EEE4",
+          fontFamily: "IBM Plex Mono",
+          fontSize: 11,
+        },
+        axisPointer: {
+          type: "line",
+          lineStyle: { color: "rgba(98,200,220,.35)", type: "dashed" },
+        },
       },
       xAxis: {
         type: "category",
@@ -57,21 +68,39 @@ export function AttackTrend({ data }: { data: DashboardData }) {
             minute: "2-digit",
           }),
         ),
-        axisLine: { lineStyle: { color: "#34343a" } },
-        axisLabel: { color: "#85858f", hideOverlap: true },
+        axisLine: { lineStyle: { color: "rgba(241,238,228,.12)" } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: "#73766e",
+          hideOverlap: true,
+          fontFamily: "IBM Plex Mono",
+          fontSize: 9,
+          margin: 14,
+        },
       },
       yAxis: {
         type: "value",
         minInterval: 1,
-        splitLine: { lineStyle: { color: "rgba(255,255,255,.05)" } },
-        axisLabel: { color: "#85858f" },
+        splitLine: {
+          lineStyle: { color: "rgba(241,238,228,.055)", type: "dashed" },
+        },
+        axisLabel: {
+          color: "#73766e",
+          fontFamily: "IBM Plex Mono",
+          fontSize: 9,
+        },
       },
       series: [
         {
           type: "line",
-          smooth: true,
+          smooth: 0.38,
           symbol: "none",
-          lineStyle: { color: "#F2C94C", width: 2 },
+          lineStyle: {
+            color: "#FFC247",
+            width: 2,
+            shadowBlur: 14,
+            shadowColor: "rgba(255,194,71,.3)",
+          },
           areaStyle: {
             color: {
               type: "linear",
@@ -80,8 +109,9 @@ export function AttackTrend({ data }: { data: DashboardData }) {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(242,201,76,.32)" },
-                { offset: 1, color: "rgba(242,201,76,0)" },
+                { offset: 0, color: "rgba(255,194,71,.26)" },
+                { offset: 0.65, color: "rgba(255,194,71,.04)" },
+                { offset: 1, color: "rgba(255,194,71,0)" },
               ],
             },
           },
@@ -92,13 +122,14 @@ export function AttackTrend({ data }: { data: DashboardData }) {
     [data.trend],
   );
 
-  return <div className="h-72 w-full" ref={ref} />;
+  return <div className="h-80 w-full" ref={ref} />;
 }
 
 export function AttackGauge({ data }: { data: DashboardData }) {
   const ref = useChart(
     {
-      animationDuration: 600,
+      animationDuration: 1000,
+      animationEasing: "cubicOut",
       series: [
         {
           type: "gauge",
@@ -110,36 +141,54 @@ export function AttackGauge({ data }: { data: DashboardData }) {
           pointer: {
             length: "58%",
             width: 5,
-            itemStyle: { color: "#F2C94C" },
+            itemStyle: { color: "#FFC247" },
           },
           progress: {
             show: true,
             roundCap: true,
             width: 12,
-            itemStyle: { color: "#F2C94C" },
+            itemStyle: {
+              color: "#FFC247",
+              shadowBlur: 14,
+              shadowColor: "rgba(255,194,71,.35)",
+            },
           },
           axisLine: {
             roundCap: true,
-            lineStyle: { width: 12, color: [[1, "#29292e"]] },
+            lineStyle: {
+              width: 12,
+              color: [[1, "rgba(241,238,228,.075)"]],
+            },
           },
           axisTick: { show: false },
-          splitLine: { distance: -18, length: 5, lineStyle: { color: "#666" } },
-          axisLabel: { distance: 18, color: "#85858f", fontSize: 10 },
+          splitLine: {
+            distance: -18,
+            length: 5,
+            lineStyle: { color: "rgba(98,200,220,.35)", width: 1 },
+          },
+          axisLabel: {
+            distance: 18,
+            color: "#73766e",
+            fontFamily: "IBM Plex Mono",
+            fontSize: 9,
+          },
           anchor: {
             show: true,
             size: 12,
-            itemStyle: { color: "#0A0A0C", borderColor: "#F2C94C" },
+            itemStyle: { color: "#080907", borderColor: "#FFC247" },
           },
           title: {
             offsetCenter: [0, "68%"],
-            color: "#85858f",
-            fontSize: 11,
+            color: "#73766e",
+            fontFamily: "IBM Plex Mono",
+            fontSize: 9,
           },
           detail: {
             offsetCenter: [0, "35%"],
-            color: "#F7F7F7",
-            fontSize: 28,
-            fontFamily: "JetBrains Mono",
+            color: "#F1EEE4",
+            fontSize: 34,
+            fontFamily: "Barlow Condensed",
+            fontWeight: 600,
             formatter: "{value}",
           },
           data: [{ value: data.currentRate, name: "ATTACKS / MIN" }],
@@ -149,7 +198,7 @@ export function AttackGauge({ data }: { data: DashboardData }) {
     [data.currentRate, data.gaugeMaximum],
   );
 
-  return <div className="h-72 w-full" ref={ref} />;
+  return <div className="h-80 w-full" ref={ref} />;
 }
 
 export function AttackMap({ data }: { data: DashboardData }) {
@@ -178,12 +227,18 @@ export function AttackMap({ data }: { data: DashboardData }) {
       );
       chart = echarts.init(element.current, undefined, { renderer: "canvas" });
       chart.setOption({
-        animationDuration: 900,
+        animationDuration: 1200,
+        animationEasing: "cubicOut",
         tooltip: {
           trigger: "item",
-          backgroundColor: "#1F1F22",
-          borderColor: "rgba(242,201,76,.3)",
-          textStyle: { color: "#F7F7F7" },
+          backgroundColor: "rgba(12,13,11,.96)",
+          borderColor: "rgba(255,194,71,.35)",
+          padding: [10, 12],
+          textStyle: {
+            color: "#F1EEE4",
+            fontFamily: "IBM Plex Mono",
+            fontSize: 11,
+          },
           formatter: (params: { data?: { label?: string } }) =>
             params.data?.label ?? "",
         },
@@ -192,9 +247,9 @@ export function AttackMap({ data }: { data: DashboardData }) {
           roam: true,
           silent: true,
           itemStyle: {
-            areaColor: "#17171b",
-            borderColor: "#36363d",
-            borderWidth: 0.6,
+            areaColor: "#12130f",
+            borderColor: "rgba(98,200,220,.18)",
+            borderWidth: 0.7,
           },
           emphasis: { disabled: true },
         },
@@ -202,12 +257,12 @@ export function AttackMap({ data }: { data: DashboardData }) {
           {
             type: "effectScatter",
             coordinateSystem: "geo",
-            rippleEffect: { scale: 5, brushType: "stroke" },
-            symbolSize: 7,
+            rippleEffect: { scale: 6, brushType: "stroke", number: 2 },
+            symbolSize: 6,
             itemStyle: {
-              color: "#F2C94C",
-              shadowBlur: 16,
-              shadowColor: "#F2C94C",
+              color: "#FFC247",
+              shadowBlur: 18,
+              shadowColor: "rgba(255,194,71,.7)",
             },
             data: data.mapAttacks.map((attack) => ({
               value: [attack.longitude, attack.latitude, 1],
@@ -227,5 +282,5 @@ export function AttackMap({ data }: { data: DashboardData }) {
     };
   }, [data.mapAttacks]);
 
-  return <div className="h-[23rem] w-full" ref={element} />;
+  return <div className="h-[28rem] w-full sm:h-[34rem]" ref={element} />;
 }

@@ -6,6 +6,8 @@ import {
   Activity,
   Check,
   Clock3,
+  Crosshair,
+  Database,
   Globe2,
   LogOut,
   LoaderCircle,
@@ -32,77 +34,127 @@ import type { AttackEvent, DashboardData, RankedValue } from "@/lib/types";
 const ranges = ["1h", "24h", "7d", "30d"];
 
 function MetricCard({
+  index,
   label,
   value,
   detail,
   icon: Icon,
+  accent = "gold",
 }: {
+  index: string;
   label: string;
   value: string | number;
   detail: string;
   icon: typeof Activity;
+  accent?: "gold" | "cyan";
 }) {
   return (
-    <Card className="glass-card border-white/[.06]">
-      <CardContent className="flex items-start justify-between p-5">
+    <Card
+      className={`glass-card instrument-card reveal min-h-40 border-white/[.07] ${
+        accent === "cyan" ? "cyan-instrument" : ""
+      }`}
+    >
+      <CardContent className="flex h-full flex-col justify-between p-5">
+        <div className="flex items-center justify-between">
+          <span className="section-index">{index}</span>
+          <Icon
+            className={
+              accent === "cyan"
+                ? "size-4 text-secondary"
+                : "size-4 text-primary"
+            }
+            strokeWidth={1.5}
+          />
+        </div>
         <div>
-          <p className="text-xs font-medium uppercase tracking-[.16em] text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-2 font-mono text-3xl font-semibold tracking-tight">
+          <p className="mt-7 font-heading text-[2.75rem] font-semibold leading-none tracking-[-.035em]">
             {value}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-        </div>
-        <div className="rounded-xl border border-primary/15 bg-primary/[.06] p-2.5">
-          <Icon className="size-5 text-primary" />
+          <p className="data-label mt-3 text-foreground/75">
+            {label}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
         </div>
       </CardContent>
     </Card>
   );
 }
 
+function SectionHeading({
+  index,
+  title,
+  detail,
+}: {
+  index: string;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="mb-4 flex items-end justify-between gap-4 border-b border-white/[.07] pb-3">
+      <div className="flex items-baseline gap-3">
+        <span className="section-index">{index}</span>
+        <h2 className="font-heading text-2xl font-semibold uppercase tracking-[.02em]">
+          {title}
+        </h2>
+      </div>
+      <p className="data-label hidden sm:block">{detail}</p>
+    </div>
+  );
+}
+
 function RankTable({
+  index,
   title,
   values,
   mono = false,
 }: {
+  index: string;
   title: string;
   values: RankedValue[];
   mono?: boolean;
 }) {
+  const maximum = Math.max(1, ...values.map((item) => item.count));
   return (
-    <Card className="glass-card min-w-0 border-white/[.06]">
-      <CardHeader>
-        <CardTitle className="font-heading text-base">{title}</CardTitle>
+    <Card className="glass-card instrument-card reveal min-w-0 border-white/[.07]">
+      <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+        <div>
+          <span className="section-index">{index}</span>
+          <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+            {title}
+          </CardTitle>
+        </div>
+        <span className="data-label">{values.length}/20</span>
       </CardHeader>
-      <CardContent className="px-0">
+      <CardContent className="max-h-[28rem] overflow-y-auto px-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12 pl-6">#</TableHead>
-              <TableHead>Value</TableHead>
-              <TableHead className="pr-6 text-right">Count</TableHead>
+              <TableHead className="w-12 pl-5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">Pos</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[.14em] text-muted-foreground">Signal</TableHead>
+              <TableHead className="pr-5 text-right text-[10px] uppercase tracking-[.14em] text-muted-foreground">Hits</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {values.length ? (
               values.map((item, index) => (
-                <TableRow key={`${item.value}-${index}`}>
-                  <TableCell className="pl-6 text-muted-foreground">
+                <TableRow className="group/row border-white/[.05]" key={`${item.value}-${index}`}>
+                  <TableCell className="pl-5 font-mono text-[10px] text-muted-foreground">
                     {String(index + 1).padStart(2, "0")}
                   </TableCell>
-                  <TableCell
-                    className={
-                      mono
-                        ? "max-w-40 truncate font-mono text-xs"
-                        : "max-w-40 truncate"
-                    }
-                    title={item.value}
-                  >
-                    {item.value || "(empty)"}
+                  <TableCell className="relative py-3" title={item.value}>
+                    <div
+                      className="absolute inset-y-1 left-0 bg-primary/[.045] transition-colors group-hover/row:bg-primary/[.08]"
+                      style={{ width: `${(item.count / maximum) * 100}%` }}
+                    />
+                    <span
+                      className={`relative block max-w-44 truncate ${
+                        mono ? "font-mono text-xs" : "text-sm"
+                      }`}
+                    >
+                      {item.value || "(empty)"}
+                    </span>
                   </TableCell>
-                  <TableCell className="pr-6 text-right font-mono text-primary">
+                  <TableCell className="pr-5 text-right font-mono text-xs text-primary">
                     {item.count}
                   </TableCell>
                 </TableRow>
@@ -203,16 +255,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
   const delta = data.currentRate - data.previousRate;
 
   return (
-    <main className="hex-grid min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-white/[.06] bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-3 sm:px-6">
+    <main className="threat-field min-h-screen">
+      <div className="scan-line" />
+      <header className="sticky top-0 z-20 border-b border-white/[.07] bg-[#080907]/85 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-[1720px] items-center justify-between px-4 py-3 sm:px-7">
           <Brand compact />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Badge
               className={
                 connected
-                  ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-                  : "border-white/10 bg-white/5 text-muted-foreground"
+                  ? "h-7 rounded-sm border-emerald-400/20 bg-emerald-400/[.08] px-2.5 font-mono text-[10px] uppercase tracking-[.12em] text-emerald-300"
+                  : "h-7 rounded-sm border-white/10 bg-white/5 px-2.5 font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground"
               }
               variant="outline"
             >
@@ -226,6 +279,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               size="sm"
               title={telegramStatus === "error" ? telegramError : undefined}
               variant="outline"
+              className="h-8 rounded-sm border-white/10 bg-white/[.025] font-mono text-[10px] uppercase tracking-[.1em] hover:border-primary/30 hover:bg-primary/[.08]"
             >
               {telegramStatus === "sending" ? (
                 <LoaderCircle className="animate-spin" />
@@ -234,12 +288,23 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               ) : (
                 <Send />
               )}
+              <span className="sm:hidden">
+                {telegramStatus === "sending"
+                  ? "Sending"
+                  : telegramStatus === "sent"
+                    ? "Sent"
+                    : telegramStatus === "error"
+                      ? "Failed"
+                      : "Telegram"}
+              </span>
               <span className="hidden sm:inline">
-                {telegramStatus === "sent"
-                  ? "Update sent"
-                  : telegramStatus === "error"
-                    ? telegramError
-                    : "Send to Telegram"}
+                {telegramStatus === "sending"
+                  ? "Sending update"
+                  : telegramStatus === "sent"
+                    ? "Update sent"
+                    : telegramStatus === "error"
+                      ? "Send failed"
+                      : "Send to Telegram"}
               </span>
             </Button>
             <Button
@@ -247,6 +312,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
               onClick={logout}
               size="icon"
               variant="ghost"
+              className="rounded-sm text-muted-foreground hover:text-foreground"
             >
               <LogOut />
             </Button>
@@ -254,54 +320,73 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1600px] space-y-5 px-4 py-6 sm:px-6 lg:py-8">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-[.18em] text-primary">
-              Threat overview
-            </p>
-            <h1 className="font-heading text-2xl font-semibold sm:text-3xl">
-              The spire is watching.
-            </h1>
+      <div className="mx-auto max-w-[1720px] px-4 py-8 sm:px-7 lg:py-12">
+        <section className="reveal relative mb-10 border-b border-white/[.08] pb-8 lg:mb-12 lg:pb-10">
+          <div className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
+            <div className="max-w-4xl">
+              <div className="mb-5 flex items-center gap-3">
+                <span className="h-px w-10 bg-primary" />
+                <p className="data-label text-primary">
+                  Live hostile signal observatory
+                </p>
+              </div>
+              <h1 className="font-heading text-[clamp(3.5rem,8vw,8rem)] font-semibold uppercase leading-[.76] tracking-[-.045em]">
+                Threat
+                <span className="ml-[.16em] text-primary">field</span>
+              </h1>
+              <p className="mt-6 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+                Port 22 is exposed. Every credential, source fingerprint, and
+                shell instruction is being observed in real time.
+              </p>
+            </div>
+            <div>
+              <p className="data-label mb-2 text-right">Observation window</p>
+              <div className="flex rounded-sm border border-white/[.08] bg-black/25 p-1">
+                {ranges.map((item) => (
+                  <Button
+                    className="h-8 flex-1 rounded-[2px] px-4 font-mono text-[10px] uppercase tracking-[.12em] sm:flex-none"
+                    key={item}
+                    onClick={() => {
+                      setRange(item);
+                      void refresh(item);
+                    }}
+                    size="sm"
+                    variant={range === item ? "default" : "ghost"}
+                  >
+                    {item}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="flex rounded-xl border border-white/[.06] bg-card/70 p-1">
-            {ranges.map((item) => (
-              <Button
-                className="h-8 flex-1 px-3 text-xs sm:flex-none"
-                key={item}
-                onClick={() => {
-                  setRange(item);
-                  void refresh(item);
-                }}
-                size="sm"
-                variant={range === item ? "default" : "ghost"}
-              >
-                {item}
-              </Button>
-            ))}
-          </div>
-        </div>
+        </section>
 
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="reveal reveal-delay-1 mb-12 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
+            index="01 / RATE"
             detail={`${delta >= 0 ? "+" : ""}${delta} vs previous minute`}
             icon={Activity}
             label="Current attack rate"
             value={`${data.currentRate}/m`}
           />
           <MetricCard
+            index="02 / VOLUME"
             detail={`During the selected ${range} window`}
             icon={ShieldAlert}
             label="Observed attacks"
             value={data.totalAttacks.toLocaleString()}
           />
           <MetricCard
+            accent="cyan"
+            index="03 / ORIGIN"
             detail="Distinct sources in top rankings"
             icon={Globe2}
             label="Tracked sources"
             value={data.topIps.length}
           />
           <MetricCard
+            accent="cyan"
+            index="04 / UPLINK"
             detail={`Updated ${new Date(data.generatedAt).toLocaleTimeString()}`}
             icon={Clock3}
             label="Telemetry status"
@@ -309,54 +394,91 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           />
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
-          <Card className="glass-card min-w-0 border-white/[.06]">
-            <CardHeader>
-              <CardTitle className="font-heading text-base">
-                Attack volume
-              </CardTitle>
+        <section className="reveal reveal-delay-2 mb-12">
+          <SectionHeading
+            detail="Temporal density / live pressure"
+            index="A / SIGNAL"
+            title="Attack telemetry"
+          />
+          <div className="grid gap-3 xl:grid-cols-[1.7fr_.8fr]">
+          <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
+            <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+              <div>
+                <span className="data-label">Historical ingress</span>
+                <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+                  Attack volume
+                </CardTitle>
+              </div>
+              <Activity className="size-4 text-primary" />
             </CardHeader>
             <CardContent className="px-2 pb-2 sm:px-4">
               <AttackTrend data={data} />
             </CardContent>
           </Card>
-          <Card className="glass-card gold-glow min-w-0 border-primary/15">
-            <CardHeader>
-              <CardTitle className="font-heading text-base">
-                Live intensity
-              </CardTitle>
+          <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
+            <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+              <div>
+                <span className="data-label">Immediate pressure</span>
+                <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+                  Live intensity
+                </CardTitle>
+              </div>
+              <Crosshair className="size-4 text-secondary" />
             </CardHeader>
             <CardContent className="px-2 pb-2">
               <AttackGauge data={data} />
             </CardContent>
           </Card>
+          </div>
         </section>
 
-        <Card className="glass-card min-w-0 overflow-hidden border-white/[.06]">
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle className="font-heading text-base">
-              Global attack origin
-            </CardTitle>
-            <Badge variant="outline">{data.mapAttacks.length} recent</Badge>
-          </CardHeader>
-          <CardContent className="px-0 pb-0">
-            <AttackMap data={data} />
-          </CardContent>
-        </Card>
-
-        <section className="grid gap-4 xl:grid-cols-3">
-          <RankTable mono title="Top 20 IP addresses" values={data.topIps} />
-          <RankTable title="Top 20 usernames" values={data.topUsernames} />
-          <RankTable mono title="Top 20 passwords" values={data.topPasswords} />
+        <section className="reveal reveal-delay-2 mb-12">
+          <SectionHeading
+            detail={`${data.mapAttacks.length} geolocated signals`}
+            index="B / TERRAIN"
+            title="Global attack origin"
+          />
+          <Card className="glass-card relative min-w-0 overflow-hidden border-white/[.07]">
+            <div className="pointer-events-none absolute left-5 top-5 z-10 hidden border-l border-primary/40 pl-3 sm:block">
+              <span className="data-label block text-primary">Live map</span>
+              <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                Drag to pan / scroll to zoom
+              </span>
+            </div>
+            <CardContent className="px-0 pb-0">
+              <AttackMap data={data} />
+            </CardContent>
+          </Card>
         </section>
 
-        <Card className="glass-card min-w-0 border-secondary/15">
-          <CardHeader className="flex-row items-center justify-between">
+        <section className="reveal reveal-delay-3 mb-12">
+          <SectionHeading
+            detail={`Ranked across selected ${range} window`}
+            index="C / PATTERNS"
+            title="Credential intelligence"
+          />
+          <div className="grid gap-3 xl:grid-cols-3">
+            <RankTable index="C.1" mono title="Source addresses" values={data.topIps} />
+            <RankTable index="C.2" title="Usernames" values={data.topUsernames} />
+            <RankTable index="C.3" mono title="Passwords" values={data.topPasswords} />
+          </div>
+        </section>
+
+        <section className="mb-12">
+          <SectionHeading
+            detail="Accepted emulation sessions"
+            index="D / SHELL"
+            title="Command stream"
+          />
+        <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
+          <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
             <CardTitle className="flex items-center gap-2 font-heading text-base">
               <TerminalSquare className="size-4 text-secondary" />
               Commands
             </CardTitle>
-            <Badge variant="outline">{data.recentCommands.length} recent</Badge>
+            <Badge className="rounded-sm font-mono text-[10px]" variant="outline">
+              {data.recentCommands.length} captured
+            </Badge>
           </CardHeader>
           <CardContent className="overflow-x-auto px-0">
             <Table className="min-w-[700px]">
@@ -403,12 +525,23 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             </Table>
           </CardContent>
         </Card>
+        </section>
 
-        <Card className="glass-card min-w-0 border-white/[.06]">
-          <CardHeader>
-            <CardTitle className="font-heading text-base">
-              20 most recent attacks
-            </CardTitle>
+        <section>
+          <SectionHeading
+            detail="Raw credential and fingerprint feed"
+            index="E / EVENTS"
+            title="Recent attacks"
+          />
+        <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
+          <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+            <div>
+              <span className="data-label">Unfiltered observations</span>
+              <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+                20 most recent attacks
+              </CardTitle>
+            </div>
+            <Database className="size-4 text-primary" />
           </CardHeader>
           <CardContent className="overflow-x-auto px-0">
             <Table className="min-w-[900px]">
@@ -461,9 +594,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             </Table>
           </CardContent>
         </Card>
+        </section>
 
-        <footer className="pb-4 text-center text-xs text-muted-foreground">
-          Optional IP geolocation uses free GeoLite2 data created by MaxMind.
+        <footer className="mt-12 flex flex-col gap-3 border-t border-white/[.07] py-6 text-[10px] uppercase tracking-[.14em] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span>Honey Spire / passive SSH observation node</span>
+          <span>Geolocation intelligence by GeoLite2</span>
         </footer>
       </div>
     </main>

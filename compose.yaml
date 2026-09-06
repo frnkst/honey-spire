@@ -60,7 +60,7 @@ services:
     image: cowrie/cowrie:3.0.13
     restart: unless-stopped
     environment:
-      PYTHONPATH: /customizations
+      PYTHONPATH: /customizations:/cowrie/cowrie-git/src
     ports:
       - "${HONEYPOT_SSH_PORT:-22}:2222"
     volumes:

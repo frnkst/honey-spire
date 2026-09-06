@@ -42,5 +42,10 @@ jobs:
         run: |
           docker compose exec -T cowrie python -c \
             "from cowrie.core import auth; policy=auth.AuthGlobal(); accepted=[policy.checklogin(b'user', str(i).encode(), '192.0.2.' + str(i % 250)) for i in range(550)]; assert sum(accepted) == 1"
+      - name: Show Cowrie diagnostics
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color --tail=100 cowrie
       - if: always()
         run: docker compose down --volumes
