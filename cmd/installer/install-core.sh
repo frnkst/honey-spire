@@ -314,7 +314,8 @@ if [[ "$CURRENT_PORTS" != "$SSH_PORT" ]]; then
     cat >/etc/systemd/system/ssh.socket.d/listen.conf <<EOF
 [Socket]
 ListenStream=
-ListenStream=${SSH_PORT}
+ListenStream=0.0.0.0:${SSH_PORT}
+ListenStream=[::]:${SSH_PORT}
 EOF
     systemctl daemon-reload
     systemctl restart ssh.socket

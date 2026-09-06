@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -105,6 +106,17 @@ func TestPersistentSummaryKeepsGeneratedCredentials(t *testing.T) {
 	for _, expected := range []string{m.config.adminPassword, "http://192.0.2.10", "ssh -p 3001 operator@192.0.2.10"} {
 		if !strings.Contains(summary, expected) {
 			t.Fatalf("persistent summary does not contain %q", expected)
+		}
+	}
+}
+
+func TestSSHSocketListensOnIPv4AndIPv6(t *testing.T) {
+	for _, listener := range []string{
+		"ListenStream=0.0.0.0:${SSH_PORT}",
+		"ListenStream=[::]:${SSH_PORT}",
+	} {
+		if !bytes.Contains(installCore, []byte(listener)) {
+			t.Fatalf("installer backend is missing explicit socket listener %q", listener)
 		}
 	}
 }
