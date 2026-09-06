@@ -1,12 +1,14 @@
 import { Buffer } from "node:buffer";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildDownloadRequest,
+  buildTemporaryDirectoryPrefix,
   resolveMaxMindCredentials,
   writeFully,
 } from "@/lib/geolite-updater";
 
-describe("buildDownloadRequest", () => {
+describe("GeoLite updater", () => {
   it("uses the current MaxMind permalink with Basic authentication", () => {
     const request = buildDownloadRequest(
       "GeoLite2-City",
@@ -27,6 +29,16 @@ describe("buildDownloadRequest", () => {
     expect(resolveMaxMindCredentials("", "123456:license-key")).toEqual({
       accountId: "123456",
       licenseKey: "license-key",
+    });
+  });
+
+  describe("buildTemporaryDirectoryPrefix", () => {
+    it("stages downloads on the disk-backed GeoLite volume", () => {
+      const destination = path.join("/data", "geolite");
+
+      expect(buildTemporaryDirectoryPrefix(destination)).toBe(
+        path.join(destination, ".honey-spire-update-"),
+      );
     });
   });
 

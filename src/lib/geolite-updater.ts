@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import maxmind from "maxmind";
 import * as tar from "tar";
@@ -69,6 +68,10 @@ export function buildDownloadRequest(
   };
 }
 
+export function buildTemporaryDirectoryPrefix(destination: string) {
+  return path.join(destination, ".honey-spire-update-");
+}
+
 async function findFile(directory: string, name: string): Promise<string | null> {
   for (const entry of await fs.promises.readdir(directory, {
     withFileTypes: true,
@@ -92,7 +95,7 @@ async function downloadEdition(
   const destination = getConfig().GEOLITE_DIR;
   await fs.promises.mkdir(destination, { recursive: true });
   const temporaryDirectory = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), "honey-spire-geolite-"),
+    buildTemporaryDirectoryPrefix(destination),
   );
   const archivePath = path.join(temporaryDirectory, `${edition}.tar.gz`);
 
