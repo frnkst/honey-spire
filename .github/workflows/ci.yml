@@ -24,6 +24,12 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./cmd/installer
+      - run: go build ./cmd/installer
 
   compose:
     runs-on: ubuntu-latest
@@ -35,7 +41,11 @@ jobs:
           echo "HONEYPOT_SSH_PORT=2222" >> .env
       - run: python3 -m py_compile deploy/sitecustomize.py
       - run: python3 scripts/test-cowrie-customization.py
-      - run: bash -n scripts/install.sh
+      - name: Check installer shell syntax
+        run: |
+          for script in scripts/install.sh cmd/installer/install-core.sh; do
+            bash -n "$script"
+          done
       - run: docker compose config --quiet
       - run: docker compose up -d --wait cowrie
       - name: Test global Cowrie admission policy

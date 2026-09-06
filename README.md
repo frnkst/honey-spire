@@ -69,13 +69,18 @@ cloud provider firewall allows TCP port **3001** before running the command.
 curl -fsSL https://raw.githubusercontent.com/frnkst/honey-spire/main/scripts/install.sh | sudo bash
 ```
 
-The installer prompts for:
+The polished terminal installer offers two setup profiles:
 
-- Optional dashboard domain; leave it blank to use the server's public IP
-- Administrator username and password
-- Optional free MaxMind GeoLite2 license key; leave it blank to disable
-  geolocation and ASN enrichment
-- Optional Telegram bot token and channel ID
+- **Quick install (recommended):** detects the public IP, uses `admin`, generates
+  a strong dashboard password, and leaves Telegram and GeoLite2 disabled. The
+  generated credentials are shown once on the completion screen.
+- **Advanced install:** guides you through an optional dashboard domain,
+  administrator credentials, a free MaxMind GeoLite2 license key, and Telegram
+  bot and channel configuration. Optional integrations can still be skipped.
+
+The interactive interface is built with Bubble Tea and Lip Gloss. The bootstrap
+downloads a checksum-verified, precompiled installer for AMD64 or ARM64, so Go
+is not installed on the server.
 
 The application image is published by the repository's Container workflow.
 When a release is still being built, the installer waits up to three minutes
@@ -85,6 +90,8 @@ It then installs Docker, moves the real SSH daemon to port 3001, verifies the
 new listener, generates secrets, and starts Honey Spire. Caddy provisions
 trusted HTTPS when a domain is supplied. Without a domain, the installer
 detects the server's public IPv4 address and serves the dashboard over HTTP.
+The final screen shows the dashboard URL, login details, installer log, and an
+exact `ssh -p 3001 ...` command to verify real SSH access.
 
 Before closing the original connection, open another terminal and verify:
 

@@ -1,0 +1,64 @@
+name: Installer
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: installer-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./cmd/installer
+      - name: Build static installer binaries
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -trimpath -ldflags="-s -w" \
+            -o dist/honey-spire-installer-linux-amd64 ./cmd/installer
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+            -trimpath -ldflags="-s -w" \
+            -o dist/honey-spire-installer-linux-arm64 ./cmd/installer
+          (
+            cd dist
+            sha256sum honey-spire-installer-linux-* > checksums.txt
+          )
+      - name: Publish installer assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            RELEASE="$GITHUB_REF_NAME"
+            TITLE="Honey Spire ${GITHUB_REF_NAME}"
+          else
+            RELEASE="installer-main"
+            TITLE="Honey Spire rolling installer"
+            PRERELEASE="--prerelease"
+          fi
+          gh release view "$RELEASE" >/dev/null 2>&1 ||
+            gh release create "$RELEASE" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              ${PRERELEASE:-} \
+              --notes "Precompiled Honey Spire installer binaries for Linux."
+          gh release upload "$RELEASE" \
+            dist/honey-spire-installer-linux-amd64 \
+            dist/honey-spire-installer-linux-arm64 \
+            --clobber
+          gh release upload "$RELEASE" dist/checksums.txt --clobber
