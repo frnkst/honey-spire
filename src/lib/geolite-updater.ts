@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import maxmind from "maxmind";
 import * as tar from "tar";
 import { getConfig } from "@/lib/config";
 
@@ -55,6 +56,7 @@ async function downloadEdition(
     await tar.x({ file: archivePath, cwd: temporaryDirectory });
     const database = await findFile(temporaryDirectory, `${edition}.mmdb`);
     if (!database) throw new Error(`${edition}.mmdb was not in the archive`);
+    await maxmind.open(database);
     await fs.promises.copyFile(
       database,
       path.join(destination, `${edition}.mmdb.next`),
