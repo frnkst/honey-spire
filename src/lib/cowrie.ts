@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getConfig } from "@/lib/config";
+import { LOCAL_BEECON_ID, touchBeecon } from "@/lib/beecons";
 import {
   getFingerprint,
   getMetadata,
@@ -47,9 +48,22 @@ function serializeAlgorithms(record: CowrieRecord): string | null {
   return Object.keys(values).length ? JSON.stringify(values) : null;
 }
 
-export async function processCowrieRecord(record: CowrieRecord) {
-  const sessionId = String(record.session ?? "");
-  if (!sessionId) return;
+export interface IngestContext {
+  beeconId: string;
+}
+
+/**
+ * Processes a raw Cowrie JSON record. Session ids are namespaced with the
+ * beecon id (`<beeconId>:<cowrieSession>`) so events from different beecons
+ * never collide; the local file tailer ingests as the built-in "local" beecon.
+ */
+export async function processCowrieRecord(
+  record: CowrieRecord,
+  { beeconId }: IngestContext = { beeconId: LOCAL_BEECON_ID },
+) {
+  const cowrieSession = String(record.session ?? "");
+  if (!cowrieSession) return;
+  const sessionId = `${beeconId}:${cowrieSession}`;
 
   if (record.eventid === "cowrie.client.version") {
     upsertFingerprint(sessionId, {
@@ -76,6 +90,7 @@ export async function processCowrieRecord(record: CowrieRecord) {
     if (!sourceIp) return;
     const command = insertCommand({
       occurredAt: parseTimestamp(record.timestamp),
+      beeconId,
       sessionId,
       sourceIp,
       command: commandText,
@@ -100,6 +115,7 @@ export async function processCowrieRecord(record: CowrieRecord) {
   ]);
   const attack = insertAttack({
     occurredAt: parseTimestamp(record.timestamp),
+    beeconId,
     sessionId,
     sourceIp,
     sourcePort:
@@ -183,4 +199,6 @@ export async function readNewCowrieEvents() {
   for (const logPath of logPaths) {
     await readLogFile(logPath);
   }
+  // Keep the built-in beecon's presence fresh for the fleet view.
+  touchBeecon(LOCAL_BEECON_ID, "local", 0);
 }

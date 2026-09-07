@@ -11,11 +11,20 @@ import {
   Globe2,
   LogOut,
   LoaderCircle,
-  Radio,
   Send,
   ShieldAlert,
   TerminalSquare,
 } from "lucide-react";
+import {
+  BeeconJoinBanner,
+  BeeconTable,
+  beeconLabel,
+  formatJoined,
+  joinedAt,
+  LiveRosterBadge,
+  liveBeecons,
+  useBeecons,
+} from "@/components/beecons";
 import { AttackGauge, AttackMap, AttackTrend } from "@/components/threat-charts";
 import { Brand } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
@@ -189,6 +198,15 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     "idle" | "sending" | "sent" | "error"
   >("idle");
   const [telegramError, setTelegramError] = useState("");
+  const [beeconSignal, setBeeconSignal] = useState(0);
+  const [beeconBusyId, setBeeconBusyId] = useState<string | null>(null);
+  const {
+    beecons: fleet,
+    pending: pendingBeecons,
+    error: beeconError,
+    approve,
+    remove,
+  } = useBeecons(range, beeconSignal);
 
   const refresh = useCallback(async (selectedRange: string) => {
     const response = await fetch(`/api/dashboard?range=${selectedRange}`, {
@@ -220,11 +238,21 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => void refresh(range), 250);
     });
+    events.addEventListener("beecon", () => setBeeconSignal((n) => n + 1));
     return () => {
       clearTimeout(refreshTimer);
       events.close();
     };
   }, [range, refresh]);
+
+  async function runBeeconAction(
+    action: (id: string) => Promise<boolean>,
+    id: string,
+  ) {
+    setBeeconBusyId(id);
+    await action(id);
+    setBeeconBusyId(null);
+  }
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -261,17 +289,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <div className="mx-auto flex max-w-[1720px] items-center justify-between px-4 py-3 sm:px-7">
           <Brand compact />
           <div className="flex items-center gap-2">
-            <Badge
-              className={
-                connected
-                  ? "h-7 rounded-sm border-emerald-400/20 bg-emerald-400/[.08] px-2.5 font-mono text-[10px] uppercase tracking-[.12em] text-emerald-300"
-                  : "h-7 rounded-sm border-white/10 bg-white/5 px-2.5 font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground"
-              }
-              variant="outline"
-            >
-              <Radio className={connected ? "animate-pulse" : ""} />
-              {connected ? "Live" : "Reconnecting"}
-            </Badge>
+            <LiveRosterBadge beecons={fleet} connected={connected} />
             <Button
               aria-label="Send update to Telegram"
               disabled={telegramStatus === "sending"}
@@ -361,6 +379,13 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           </div>
         </section>
 
+        <BeeconJoinBanner
+          busyId={beeconBusyId}
+          onApprove={(id) => void runBeeconAction(approve, id)}
+          onDeny={(id) => void runBeeconAction(remove, id)}
+          pending={pendingBeecons}
+        />
+
         <section className="reveal reveal-delay-1 mb-12 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             index="01 / RATE"
@@ -387,7 +412,16 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           <MetricCard
             accent="cyan"
             index="04 / UPLINK"
-            detail={`Updated ${new Date(data.generatedAt).toLocaleTimeString()}`}
+            detail={
+              liveBeecons(fleet).length
+                ? liveBeecons(fleet)
+                    .map(
+                      (beecon) =>
+                        `${beeconLabel(beecon)} (since ${formatJoined(joinedAt(beecon))})`,
+                    )
+                    .join(" · ")
+                : `Updated ${new Date(data.generatedAt).toLocaleTimeString()}`
+            }
             icon={Clock3}
             label="Telemetry status"
             value={connected ? "LIVE" : "SYNC"}
@@ -594,6 +628,25 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             </Table>
           </CardContent>
         </Card>
+        </section>
+
+        <section className="reveal mb-12">
+          <SectionHeading
+            detail={
+              fleet
+                ? `${liveBeecons(fleet).length} of ${fleet.length} beecons online`
+                : "Fleet telemetry"
+            }
+            index="F / FLEET"
+            title="Beecon fleet"
+          />
+          <BeeconTable
+            beecons={fleet}
+            busyId={beeconBusyId}
+            error={beeconError}
+            onApprove={(id) => void runBeeconAction(approve, id)}
+            onRemove={(id) => void runBeeconAction(remove, id)}
+          />
         </section>
 
         <footer className="mt-12 flex flex-col gap-3 border-t border-white/[.07] py-6 text-[10px] uppercase tracking-[.14em] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">

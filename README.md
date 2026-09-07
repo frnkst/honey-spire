@@ -5,6 +5,20 @@ a single Linux server with **1 GB RAM, 1 vCPU, and 25 GB storage**. Cowrie
 emulates an SSH server on port 22 while the real host SSH service moves to port
 3001.
 
+Honey Spire can be installed in three topologies:
+
+- **Full install** — dashboard and honeypot on one server. Everything below in a
+  single deployment.
+- **Tower** — the dashboard and its database only. Beecon honeypots on other
+  servers ship their captured events to the tower over HTTPS.
+- **Beecon** — a honeypot sensor with no dashboard. It registers with a tower,
+  and once you approve it there, every captured attack flows to the tower.
+
+The dashboard shows which beecons are live (with the display name you chose at
+install time and the date they joined), how much each one has collected, and
+lets you approve or remove them. A beecon whose access was removed stops
+shipping and buffers nothing further.
+
 ![Honey Spire threat dashboard](docs/screenshots/dashboard-desktop.jpg)
 
 <table>
@@ -48,7 +62,13 @@ cloud provider firewall allows TCP port **3001** before running the command.
 curl -fsSL https://raw.githubusercontent.com/frnkst/honey-spire/main/scripts/install.sh | sudo bash
 ```
 
-Before closing the original connection, open another terminal and verify:
+The installer first asks what this server should be: **full**, **tower**, or
+**beecon**.
+
+### Full install (honeypot + dashboard on one server)
+
+Continue through quick or advanced setup. Before closing the original
+connection, open another terminal and verify:
 
 ```bash
 ssh -p 3001 your-user@your-domain-or-ip
@@ -56,7 +76,31 @@ ssh -p 3001 your-user@your-domain-or-ip
 
 The honeypot is available to scanners on port 22. The dashboard is available at
 `https://your-domain.example` with a domain, or `http://your-server-ip` without
-one.
+one. Captured attacks appear on the dashboard as the built-in *this server*
+beecon.
+
+### Tower install (dashboard only)
+
+Choose **TOWER** and continue through quick or advanced setup. The tower
+requires a domain or a public IP so beecons can reach it. The real SSH daemon
+is left untouched on port 22; no honeypot runs on the tower.
+
+### Beecon install (honeypot only)
+
+Choose **BEECON**. The installer asks for:
+
+1. **Tower address** — the tower's domain or IP (for example
+   `tower.example.com`). The installer contacts the tower to verify it is
+   reachable before continuing.
+2. **Display name** — the name shown on the tower's dashboard and in the join
+   request.
+
+The installer submits a join request and finishes immediately; it does not wait
+for approval. On the tower, the dashboard shows
+*"Beecon your-name wants to join this tower"* — approve it, and the beecon
+starts shipping captured attacks. Until then (and if the tower is unreachable),
+the beecon buffers and retries on its own. Like the full install, the beecon
+moves real SSH to port 3001 and exposes the honeypot on port 22.
 
 Review remote scripts before executing them if required by your security
 policy.

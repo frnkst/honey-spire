@@ -25,7 +25,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go test ./cmd/installer
+      - run: go test ./...
       - name: Build static installer binaries
         run: |
           mkdir -p dist

@@ -1,17 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
+import { hasValidOrigin } from "@/lib/http";
 import { sendTelegramSummary } from "@/lib/telegram";
-
-function hasValidOrigin(request: NextRequest) {
-  if (process.env.NODE_ENV !== "production") return true;
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).host === request.headers.get("host");
-  } catch {
-    return false;
-  }
-}
 
 export async function POST(request: NextRequest) {
   if (!(await isAuthenticated())) {

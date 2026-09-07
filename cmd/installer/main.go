@@ -4,15 +4,19 @@ import (
 	"bufio"
 	"crypto/rand"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -26,15 +30,48 @@ var installCore []byte
 type screen int
 
 const (
-	screenMode screen = iota
+	screenTopology screen = iota
+	screenMode
 	screenField
+	screenProbing
 	screenReview
 	screenInstalling
 	screenSuccess
 	screenFailure
 )
 
+type topology int
+
+const (
+	topologyFull topology = iota
+	topologyTower
+	topologyBeecon
+)
+
+func (t topology) name() string {
+	switch t {
+	case topologyTower:
+		return "tower"
+	case topologyBeecon:
+		return "beecon"
+	default:
+		return "full"
+	}
+}
+
+func topologyByIndex(index int) topology {
+	switch index {
+	case 1:
+		return topologyTower
+	case 2:
+		return topologyBeecon
+	default:
+		return topologyFull
+	}
+}
+
 type installConfig struct {
+	topology          topology
 	mode              string
 	domain            string
 	adminUsername     string
@@ -43,6 +80,8 @@ type installConfig struct {
 	maxmindKey        string
 	telegramBotToken  string
 	telegramChatID    string
+	towerURL          string
+	beeconName        string
 	generatedPassword bool
 }
 
@@ -64,20 +103,22 @@ type installDoneMsg struct {
 }
 
 type model struct {
-	screen        screen
-	width         int
-	height        int
-	modeCursor    int
-	fields        []formField
-	fieldIndex    int
-	config        installConfig
-	quickConfig   installConfig
-	errText       string
-	installStep   string
-	activity      []string
-	installEvents chan tea.Msg
-	results       map[string]string
-	spinner       spinner.Model
+	screen         screen
+	width          int
+	height         int
+	modeCursor     int
+	topologyCursor int
+	fields         []formField
+	fieldIndex     int
+	config         installConfig
+	quickConfig    installConfig
+	probeDetail    string
+	errText        string
+	installStep    string
+	activity       []string
+	installEvents  chan tea.Msg
+	results        map[string]string
+	spinner        spinner.Model
 }
 
 var (
@@ -151,20 +192,34 @@ func newModel() (model, error) {
 	spin.Style = lipgloss.NewStyle().Foreground(gold)
 
 	quick := installConfig{
+		topology:          topologyFull,
 		mode:              "quick",
 		adminUsername:     "admin",
 		adminPassword:     password,
 		generatedPassword: true,
 	}
 	return model{
-		screen:      screenMode,
-		config:      quick,
-		quickConfig: quick,
-		fields:      advancedFields(),
-		spinner:     spin,
-		results:     make(map[string]string),
-		activity:    make([]string, 0, 7),
+		screen:         screenTopology,
+		topologyCursor: 0,
+		config:         quick,
+		quickConfig:    quick,
+		fields:         advancedFields(),
+		spinner:        spin,
+		results:        make(map[string]string),
+		activity:       make([]string, 0, 7),
 	}, nil
+}
+
+func beeconFields() []formField {
+	hostname, err := os.Hostname()
+	hostname = strings.TrimSpace(hostname)
+	if err != nil || hostname == "" || !regexp.MustCompile(`^[\w .-]{1,64}$`).MatchString(hostname) {
+		hostname = ""
+	}
+	return []formField{
+		newField("tower_address", "Tower address", "Domain or IP of the tower dashboard, for example https://tower.example.com.", "tower.example.com", false, ""),
+		newField("beecon_name", "Display name", "Shown on the tower dashboard and in the join request. Spaces are allowed.", "edge-server-01", false, hostname),
+	}
 }
 
 func advancedFields() []formField {
@@ -207,11 +262,28 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case spinner.TickMsg:
-		if m.screen == screenInstalling {
+		if m.screen == screenInstalling || m.screen == screenProbing {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
+	case towerProbeMsg:
+		if m.screen != screenProbing {
+			return m, nil
+		}
+		if !msg.ok {
+			m.screen = screenField
+			m.errText = msg.detail
+			m.fields[m.fieldIndex].input.Focus()
+			return m, textinput.Blink
+		}
+		m.fields[m.fieldIndex].input.SetValue(msg.url)
+		m.errText = ""
+		m.config.towerURL = msg.url
+		m.fieldIndex++
+		m.fields[m.fieldIndex].input.Focus()
+		m.screen = screenField
+		return m, textinput.Blink
 	case progressMsg:
 		if msg.step != "" {
 			m.installStep = msg.step
@@ -241,10 +313,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch m.screen {
+		case screenTopology:
+			return m.updateTopology(msg)
 		case screenMode:
 			return m.updateMode(msg)
 		case screenField:
 			return m.updateField(msg)
+		case screenProbing:
+			return m, nil
 		case screenReview:
 			return m.updateReview(msg)
 		case screenSuccess, screenFailure:
@@ -257,6 +333,29 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updateTopology(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		m.topologyCursor = max(0, m.topologyCursor-1)
+	case "down", "j":
+		m.topologyCursor = min(2, m.topologyCursor+1)
+	case "enter":
+		m.errText = ""
+		m.config.topology = topologyByIndex(m.topologyCursor)
+		if m.config.topology == topologyBeecon {
+			m.quickConfig.topology = topologyBeecon
+			m.fields = beeconFields()
+			m.fieldIndex = 0
+			m.fields[0].input.Focus()
+			m.screen = screenField
+			return m, textinput.Blink
+		}
+		m.quickConfig.topology = m.config.topology
+		m.screen = screenMode
+	}
+	return m, nil
+}
+
 func (m model) updateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
@@ -266,11 +365,12 @@ func (m model) updateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.errText = ""
 		if m.modeCursor == 0 {
+			m.quickConfig.topology = m.config.topology
 			m.config = m.quickConfig
 			m.screen = screenReview
 			return m, nil
 		}
-		m.config = installConfig{mode: "advanced"}
+		m.config = installConfig{mode: "advanced", topology: m.config.topology}
 		m.fields = advancedFields()
 		m.fieldIndex = 0
 		m.fields[0].input.Focus()
@@ -285,7 +385,11 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.fields[m.fieldIndex].input.Blur()
 		if m.fieldIndex == 0 {
-			m.screen = screenMode
+			if m.config.topology == topologyBeecon {
+				m.screen = screenTopology
+			} else {
+				m.screen = screenMode
+			}
 		} else {
 			m.fieldIndex--
 			m.fields[m.fieldIndex].input.Focus()
@@ -299,6 +403,18 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.errText = ""
+
+		if m.config.topology == topologyBeecon && m.fields[m.fieldIndex].key == "tower_address" {
+			normalized, err := normalizeTowerAddress(value)
+			if err != nil {
+				m.errText = err.Error()
+				return m, nil
+			}
+			m.fields[m.fieldIndex].input.Blur()
+			m.probeDetail = ""
+			m.screen = screenProbing
+			return m, tea.Batch(m.spinner.Tick, probeTower(normalized))
+		}
 		m.fields[m.fieldIndex].input.Blur()
 
 		if m.fields[m.fieldIndex].key == "maxmind_account" && value == "" {
@@ -328,6 +444,12 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateReview(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		if m.config.topology == topologyBeecon {
+			m.screen = screenField
+			m.fieldIndex = fieldIndex(m.fields, "beecon_name")
+			m.fields[m.fieldIndex].input.Focus()
+			return m, textinput.Blink
+		}
 		if m.config.mode == "advanced" {
 			m.screen = screenField
 			m.fieldIndex = fieldIndex(m.fields, "telegram_chat")
@@ -354,8 +476,16 @@ func configFromFields(fields []formField) installConfig {
 	for _, field := range fields {
 		values[field.key] = strings.TrimSpace(field.input.Value())
 	}
+	if len(fields) > 0 && fields[0].key == "tower_address" {
+		return installConfig{
+			topology:   topologyBeecon,
+			towerURL:   values["tower_address"],
+			beeconName: values["beecon_name"],
+		}
+	}
 	return installConfig{
 		mode:             "advanced",
+		topology:         topologyFull,
 		domain:           values["domain"],
 		adminUsername:    values["username"],
 		adminPassword:    values["password"],
@@ -371,6 +501,10 @@ func validateField(key, value string, fields []formField) error {
 	case "domain":
 		if value != "" && !validDomain(value) {
 			return fmt.Errorf("enter a hostname only, without https:// or a path")
+		}
+	case "beecon_name":
+		if !regexp.MustCompile(`^[\w .-]{1,64}$`).MatchString(value) {
+			return fmt.Errorf("use 1-64 letters, numbers, spaces, dots, underscores, or dashes")
 		}
 	case "username":
 		if !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`).MatchString(value) {
@@ -434,6 +568,56 @@ func validDomain(value string) bool {
 	return true
 }
 
+type towerProbeMsg struct {
+	ok     bool
+	url    string
+	detail string
+}
+
+// normalizeTowerAddress accepts a bare host ("tower.example.com",
+// "192.0.2.10:3000") or an explicit http(s) URL and returns a normalized
+// base URL with no trailing slash. Bare hosts default to https.
+func normalizeTowerAddress(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("enter the tower's domain or IP address")
+	}
+	if !strings.Contains(value, "://") {
+		value = "https://" + value
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", fmt.Errorf("enter a valid tower address, for example tower.example.com")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("enter the tower address without credentials, query, or fragment")
+	}
+	return strings.TrimRight(parsed.Scheme+"://"+parsed.Host+parsed.Path, "/"), nil
+}
+
+// probeTower verifies the tower is reachable and is actually Honey Spire
+// before the installer commits the beecon configuration.
+func probeTower(address string) tea.Cmd {
+	return func() tea.Msg {
+		client := &http.Client{Timeout: 10 * time.Second}
+		response, err := client.Get(address + "/api/health")
+		if err != nil {
+			return towerProbeMsg{ok: false, url: address, detail: fmt.Sprintf("could not reach the tower: %v", err)}
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return towerProbeMsg{ok: false, url: address, detail: fmt.Sprintf("the tower answered with HTTP %d", response.StatusCode)}
+		}
+		var body struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body); err != nil || body.Status != "ok" {
+			return towerProbeMsg{ok: false, url: address, detail: "that address is not responding like a Honey Spire tower"}
+		}
+		return towerProbeMsg{ok: true, url: address}
+	}
+}
+
 func generatePassword(length int) (string, error) {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#%"
 	var password strings.Builder
@@ -470,6 +654,7 @@ func runInstaller(config installConfig, events chan<- tea.Msg) {
 
 	command := exec.Command("/bin/bash", scriptPath)
 	command.Env = append(os.Environ(),
+		"INSTALL_TOPOLOGY="+config.topology.name(),
 		"DOMAIN="+config.domain,
 		"ADMIN_USERNAME="+config.adminUsername,
 		"ADMIN_PASSWORD="+config.adminPassword,
@@ -477,6 +662,8 @@ func runInstaller(config installConfig, events chan<- tea.Msg) {
 		"MAXMIND_LICENSE_KEY="+config.maxmindKey,
 		"TELEGRAM_BOT_TOKEN="+config.telegramBotToken,
 		"TELEGRAM_CHAT_ID="+config.telegramChatID,
+		"TOWER_URL="+config.towerURL,
+		"BEECON_NAME="+config.beeconName,
 	)
 
 	logPath := valueOr(os.Getenv("HONEY_SPIRE_LOG_FILE"), "/var/log/honey-spire-install.log")
@@ -577,10 +764,14 @@ func (m model) View() string {
 
 	var content string
 	switch m.screen {
+	case screenTopology:
+		content = m.topologyView(panelWidth)
 	case screenMode:
 		content = m.modeView(panelWidth)
 	case screenField:
 		content = m.fieldView(panelWidth)
+	case screenProbing:
+		content = m.probingView(panelWidth)
 	case screenReview:
 		content = m.reviewView(panelWidth)
 	case screenInstalling:
@@ -593,6 +784,77 @@ func (m model) View() string {
 
 	body := lipgloss.JoinVertical(lipgloss.Left, top, "", content)
 	return lipgloss.NewStyle().Width(width).Padding(1, 3).Render(body)
+}
+
+func (m model) topologyView(width int) string {
+	options := []struct {
+		name string
+		tag  string
+		desc string
+	}{
+		{"FULL INSTALL", "ALL-IN-ONE", "Dashboard and honeypot on this server. Everything below in one deployment."},
+		{"TOWER", "DASHBOARD", "Threat dashboard and database only. Beecons ship their events to this server."},
+		{"BEECON", "SENSOR", "Honeypot only. Captures attacks on this server and ships them to a remote tower."},
+	}
+
+	rows := make([]string, 0, len(options))
+	for index, option := range options {
+		selected := index == m.topologyCursor
+		borderColor := graphite
+		prefix := "  "
+		if selected {
+			borderColor = gold
+			prefix = "> "
+		}
+		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(white)
+		if selected {
+			nameStyle = nameStyle.Foreground(gold)
+		}
+		row := lipgloss.JoinVertical(
+			lipgloss.Left,
+			prefix+nameStyle.Render(option.name)+"  "+lipgloss.NewStyle().Foreground(blue).Render(option.tag),
+			"  "+subtle.Width(width-10).Render(option.desc),
+		)
+		rows = append(rows, lipgloss.NewStyle().
+			Width(width-4).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(borderColor).
+			Padding(1, 2).
+			Render(row))
+	}
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		kicker.Render("01 / NODE ROLE"),
+		"",
+		lipgloss.NewStyle().Bold(true).Foreground(white).Render("What is this server?"),
+		subtle.Width(width-4).Render("A tower collects and shows attacks. Beecons are the honeypots feeding it."),
+		"",
+		strings.Join(rows, "\n"),
+		"",
+		help.Render("up/down select  -  enter continue  -  ctrl+c exit"),
+	)
+}
+
+func (m model) probingView(width int) string {
+	panel := lipgloss.NewStyle().
+		Width(width-4).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(graphite).
+		Padding(1, 2).
+		Render(strings.Join([]string{
+			m.spinner.View() + " " + lipgloss.NewStyle().Bold(true).Foreground(white).Render("Checking the tower"),
+			subtle.Width(width - 8).Render(valueOr(m.probeDetail, "Contacting "+m.fields[m.fieldIndex].input.Value()+" ...")),
+		}, "\n"))
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		kicker.Render("BEECON SETUP"),
+		"",
+		panel,
+		"",
+		help.Render("ctrl+c exit"),
+	)
 }
 
 func (m model) modeView(width int) string {
@@ -633,10 +895,15 @@ func (m model) modeView(width int) string {
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		kicker.Render("01 / DEPLOYMENT PROFILE"),
+		kicker.Render("02 / DEPLOYMENT PROFILE"),
 		"",
 		lipgloss.NewStyle().Bold(true).Foreground(white).Render("How should this node be configured?"),
-		subtle.Render("The real SSH daemon will move to port 3001 in both modes."),
+		subtle.Render(func() string {
+			if m.config.topology == topologyTower {
+				return "Tower only: the real SSH daemon stays untouched on port 22."
+			}
+			return "The real SSH daemon will move to port 3001 so the honeypot can claim port 22."
+		}()),
 		"",
 		strings.Join(rows, "\n"),
 		"",
@@ -670,14 +937,39 @@ func (m model) fieldView(width int) string {
 }
 
 func (m model) reviewView(width int) string {
-	rows := []string{
-		summaryRow("PROFILE", strings.ToUpper(m.config.mode)),
-		summaryRow("DASHBOARD", valueOr(m.config.domain, "Automatic public IPv4")),
-		summaryRow("ADMIN", m.config.adminUsername),
-		summaryRow("GEOIP", configuredLabel(m.config.maxmindAccountID)),
-		summaryRow("TELEGRAM", configuredLabel(m.config.telegramBotToken)),
-		summaryRow("REAL SSH", "Port 3001"),
-		summaryRow("HONEYPOT", "Port 22"),
+	var rows []string
+	switch m.config.topology {
+	case topologyTower:
+		rows = []string{
+			summaryRow("TOPOLOGY", "TOWER"),
+			summaryRow("PROFILE", strings.ToUpper(m.config.mode)),
+			summaryRow("DASHBOARD", valueOr(m.config.domain, "Automatic public IPv4")),
+			summaryRow("ADMIN", m.config.adminUsername),
+			summaryRow("GEOIP", configuredLabel(m.config.maxmindAccountID)),
+			summaryRow("TELEGRAM", configuredLabel(m.config.telegramBotToken)),
+			summaryRow("REAL SSH", "Unchanged (port 22)"),
+			summaryRow("HONEYPOT", "None - remote beecons report to this dashboard"),
+		}
+	case topologyBeecon:
+		rows = []string{
+			summaryRow("TOPOLOGY", "BEECON"),
+			summaryRow("TOWER", m.config.towerURL),
+			summaryRow("DISPLAY NAME", m.config.beeconName),
+			summaryRow("REAL SSH", "Port 3001"),
+			summaryRow("HONEYPOT", "Port 22"),
+			summaryRow("JOINING", "You will approve this beecon on the tower's dashboard after install"),
+		}
+	default:
+		rows = []string{
+			summaryRow("TOPOLOGY", "FULL INSTALL"),
+			summaryRow("PROFILE", strings.ToUpper(m.config.mode)),
+			summaryRow("DASHBOARD", valueOr(m.config.domain, "Automatic public IPv4")),
+			summaryRow("ADMIN", m.config.adminUsername),
+			summaryRow("GEOIP", configuredLabel(m.config.maxmindAccountID)),
+			summaryRow("TELEGRAM", configuredLabel(m.config.telegramBotToken)),
+			summaryRow("REAL SSH", "Port 3001"),
+			summaryRow("HONEYPOT", "Port 22"),
+		}
 	}
 	panel := lipgloss.NewStyle().
 		Width(width-4).
@@ -743,26 +1035,57 @@ func (m model) successView(width int) string {
 	sshUser := valueOr(m.results["ssh_user"], "root")
 	sshCommand := fmt.Sprintf("ssh -p 3001 %s@%s", sshUser, sshHost)
 
-	credential := lipgloss.JoinVertical(
-		lipgloss.Left,
-		summaryRow("USERNAME", m.config.adminUsername),
-		summaryRow("PASSWORD", "Use the password supplied during setup"),
-	)
-	if m.config.generatedPassword {
-		credential = lipgloss.JoinVertical(
+	var panelBody []string
+	var footnotes []string
+
+	switch m.config.topology {
+	case topologyTower:
+		panelBody = []string{
+			lipgloss.NewStyle().Bold(true).Foreground(success).Render("TOWER IS ONLINE"),
+			"",
+			summaryRow("DASHBOARD", dashboard),
+			summaryRow("USERNAME", m.config.adminUsername),
+			summaryRow("PASSWORD", valueOr(m.config.adminPassword, "Use the password supplied during setup")),
+			"",
+			subtle.Render("The real SSH daemon was left untouched on port 22."),
+			subtle.Render("Run the installer on each sensor server and choose BEECON;"),
+			subtle.Render("approve every joining beecon in this dashboard."),
+		}
+		footnotes = []string{
+			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")),
+		}
+	case topologyBeecon:
+		panelBody = []string{
+			lipgloss.NewStyle().Bold(true).Foreground(success).Render("BEECON IS ONLINE"),
+			"",
+			summaryRow("TOWER", valueOr(m.results["tower"], m.config.towerURL)),
+			summaryRow("DISPLAY NAME", m.config.beeconName),
+			summaryRow("TOKEN ID", valueOr(m.results["token"], "(see /opt/honey-spire/.env)")),
+			"",
+			subtle.Render("Real SSH moved to port 3001. Verify it now in a second terminal:"),
+			lipgloss.NewStyle().Bold(true).Foreground(gold).Render(sshCommand),
+			"",
+			subtle.Render("The beecon buffers events until you approve it on the"),
+			subtle.Render("tower dashboard: Beecon " + m.config.beeconName + " wants to join this tower."),
+		}
+		footnotes = []string{
+			errorText.Render("Keep this terminal open until the SSH command succeeds."),
+			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")),
+		}
+	default:
+		credential := lipgloss.JoinVertical(
 			lipgloss.Left,
 			summaryRow("USERNAME", m.config.adminUsername),
-			summaryRow("PASSWORD", m.config.adminPassword),
+			summaryRow("PASSWORD", "Use the password supplied during setup"),
 		)
-	}
-
-	panel := lipgloss.NewStyle().
-		Width(width-4).
-		Border(lipgloss.DoubleBorder()).
-		BorderForeground(success).
-		Padding(1, 2).
-		Render(lipgloss.JoinVertical(
-			lipgloss.Left,
+		if m.config.generatedPassword {
+			credential = lipgloss.JoinVertical(
+				lipgloss.Left,
+				summaryRow("USERNAME", m.config.adminUsername),
+				summaryRow("PASSWORD", m.config.adminPassword),
+			)
+		}
+		panelBody = []string{
 			lipgloss.NewStyle().Bold(true).Foreground(success).Render("HONEY SPIRE IS ONLINE"),
 			"",
 			summaryRow("DASHBOARD", dashboard),
@@ -770,20 +1093,29 @@ func (m model) successView(width int) string {
 			"",
 			subtle.Render("Real SSH moved to port 3001. Verify it now in a second terminal:"),
 			lipgloss.NewStyle().Bold(true).Foreground(gold).Render(sshCommand),
-		))
+		}
+		footnotes = []string{
+			errorText.Render("Keep this terminal open until the SSH command succeeds."),
+			subtle.Render("Honeypot traffic is now being captured on port 22."),
+			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")),
+		}
+	}
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
+	panel := lipgloss.NewStyle().
+		Width(width-4).
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(success).
+		Padding(1, 2).
+		Render(lipgloss.JoinVertical(lipgloss.Left, panelBody...))
+
+	after := append([]string{
 		kicker.Render("04 / INSTALLATION COMPLETE"),
 		"",
 		panel,
 		"",
-		errorText.Render("Keep this terminal open until the SSH command succeeds."),
-		subtle.Render("Honeypot traffic is now being captured on port 22."),
-		subtle.Render("Installer log: "+valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")),
-		"",
-		help.Render("enter close installer"),
-	)
+	}, footnotes...)
+	after = append(after, "", help.Render("enter close installer"))
+	return lipgloss.JoinVertical(lipgloss.Left, after...)
 }
 
 func (m model) failureView(width int) string {
@@ -807,32 +1139,64 @@ func (m model) failureView(width int) string {
 func (m model) persistentSummary() string {
 	switch m.screen {
 	case screenSuccess:
-		dashboard := valueOr(m.results["dashboard"], "Deployment complete")
 		sshHost := valueOr(m.results["ssh_host"], "your-server")
 		sshUser := valueOr(m.results["ssh_user"], "root")
-		lines := []string{
-			"",
-			lipgloss.NewStyle().Bold(true).Foreground(success).Render("HONEY SPIRE IS ONLINE"),
-			"Dashboard: " + dashboard,
-			"Username:  " + m.config.adminUsername,
+		sshCommand := fmt.Sprintf("ssh -p 3001 %s@%s", sshUser, sshHost)
+		logLine := "Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")
+
+		switch m.config.topology {
+		case topologyTower:
+			return strings.Join([]string{
+				"",
+				lipgloss.NewStyle().Bold(true).Foreground(success).Render("TOWER IS ONLINE"),
+				"Dashboard: " + valueOr(m.results["dashboard"], "Deployment complete"),
+				"Username:  " + m.config.adminUsername,
+				"Password:  " + valueOr(m.config.adminPassword, "Use the password supplied during setup"),
+				"",
+				"Real SSH remains on port 22.",
+				"Run the installer on each sensor server and choose BEECON.",
+				"Approve every joining beecon in the tower dashboard.",
+				logLine,
+				"",
+			}, "\n")
+		case topologyBeecon:
+			return strings.Join([]string{
+				"",
+				lipgloss.NewStyle().Bold(true).Foreground(success).Render("BEECON IS ONLINE"),
+				"Tower:       " + valueOr(m.results["tower"], m.config.towerURL),
+				"Display name:" + " " + m.config.beeconName,
+				"",
+				"Real SSH moved to port 3001. Verify it in a second terminal:",
+				lipgloss.NewStyle().Bold(true).Foreground(gold).Render(sshCommand),
+				"",
+				"Keep this terminal open until the SSH command succeeds.",
+				"The beecon buffers events until you approve it on the tower dashboard.",
+				logLine,
+				"",
+			}, "\n")
+		default:
+			lines := []string{
+				"",
+				lipgloss.NewStyle().Bold(true).Foreground(success).Render("HONEY SPIRE IS ONLINE"),
+				"Dashboard: " + valueOr(m.results["dashboard"], "Deployment complete"),
+				"Username:  " + m.config.adminUsername,
+			}
+			if m.config.generatedPassword {
+				lines = append(lines, "Password:  "+m.config.adminPassword)
+			} else {
+				lines = append(lines, "Password:  Use the password supplied during setup")
+			}
+			lines = append(lines,
+				"",
+				"Real SSH moved to port 3001. Verify it in a second terminal:",
+				lipgloss.NewStyle().Bold(true).Foreground(gold).Render(sshCommand),
+				"",
+				"Keep this terminal open until the SSH command succeeds.",
+				"Installer log: "+logLine,
+				"",
+			)
+			return strings.Join(lines, "\n")
 		}
-		if m.config.generatedPassword {
-			lines = append(lines, "Password:  "+m.config.adminPassword)
-		} else {
-			lines = append(lines, "Password:  Use the password supplied during setup")
-		}
-		lines = append(lines,
-			"",
-			"Real SSH moved to port 3001. Verify it in a second terminal:",
-			lipgloss.NewStyle().Bold(true).Foreground(gold).Render(
-				fmt.Sprintf("ssh -p 3001 %s@%s", sshUser, sshHost),
-			),
-			"",
-			"Keep this terminal open until the SSH command succeeds.",
-			"Installer log: "+valueOr(m.results["log_file"], "/var/log/honey-spire-install.log"),
-			"",
-		)
-		return strings.Join(lines, "\n")
 	case screenFailure:
 		return strings.Join([]string{
 			"",

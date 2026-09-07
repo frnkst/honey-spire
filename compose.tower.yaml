@@ -1,15 +1,16 @@
 name: honey-spire
 
+# Tower install: dashboard + database only. Beecon honeypots ship their
+# events to this server over the ingest API; no honeypot runs here.
+
 services:
   app:
     image: ${HONEY_SPIRE_IMAGE:-ghcr.io/frnkst/honey-spire:latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      HONEY_SPIRE_MODE: full
+      HONEY_SPIRE_MODE: tower
       DATABASE_PATH: /data/app/honey-spire.db
-      COWRIE_JSON_LOG: /data/cowrie/log/cowrie/cowrie.json
-      COWRIE_TTY_DIR: /data/cowrie/log/cowrie
       GEOLITE_DIR: /data/geolite
       MAXMIND_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID:-}
       MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY}
@@ -26,7 +27,6 @@ services:
     volumes:
       - app-data:/data/app
       - geolite-data:/data/geolite
-      - cowrie-data:/data/cowrie
     networks:
       - web
     mem_limit: 320m
@@ -52,52 +52,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-    logging:
-      driver: local
-      options:
-        max-size: 10m
-        max-file: "3"
-
-  cowrie:
-    image: cowrie/cowrie:3.0.13
-    restart: unless-stopped
-    environment:
-      PYTHONPATH: /customizations:/cowrie/cowrie-git/src
-    ports:
-      - "${HONEYPOT_SSH_PORT:-22}:2222"
-    volumes:
-      - cowrie-data:/cowrie/cowrie-git/var
-      - ./deploy/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
-      - ./deploy/sitecustomize.py:/customizations/sitecustomize.py:ro
-    networks:
-      - honeypot
-    mem_limit: 160m
-    mem_reservation: 96m
-    cpus: 0.35
-    pids_limit: 96
-    ulimits:
-      nofile:
-        soft: 256
-        hard: 256
-    read_only: true
-    tmpfs:
-      - /tmp:size=16m,mode=1777
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     logging:
       driver: local
       options:
@@ -143,11 +97,9 @@ services:
 
 networks:
   web:
-  honeypot:
 
 volumes:
   app-data:
   geolite-data:
-  cowrie-data:
   caddy-data:
   caddy-config:

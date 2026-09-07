@@ -64,7 +64,11 @@ export function startRuntime() {
   getDatabase();
   const config = getConfig();
 
-  schedule("Cowrie ingestion", 1_000, readNewCowrieEvents);
+  // The local Cowrie tailer only exists in full installs; towers receive
+  // remote beecon events over the ingest API instead.
+  if (config.HONEY_SPIRE_MODE === "full") {
+    schedule("Cowrie ingestion", 1_000, readNewCowrieEvents);
+  }
   schedule("GeoLite update", 6 * 60 * 60_000, async () => {
     if (!isDue("last_geolite_update", 7 * 24 * 60 * 60_000)) return;
     await updateGeoLiteDatabases();
@@ -73,19 +77,21 @@ export function startRuntime() {
   schedule("Retention cleanup", 60 * 60_000, async () => {
     if (!isDue("last_cleanup", 24 * 60 * 60_000)) return;
     cleanupDatabase(config.RETENTION_DAYS);
-    await removeExpiredFiles(
-      config.COWRIE_TTY_DIR,
-      config.RAW_SESSION_RETENTION_DAYS,
-      (filePath) =>
-        /^(?:\d{8}-\d{6}-[a-f0-9]+-\d+i\.log|[a-f0-9]{64})$/.test(
-          path.basename(filePath),
-        ),
-    );
-    await removeExpiredFiles(
-      path.dirname(config.COWRIE_JSON_LOG),
-      config.RAW_SESSION_RETENTION_DAYS,
-      (filePath) => path.basename(filePath).startsWith("cowrie.json."),
-    );
+    if (config.HONEY_SPIRE_MODE === "full") {
+      await removeExpiredFiles(
+        config.COWRIE_TTY_DIR,
+        config.RAW_SESSION_RETENTION_DAYS,
+        (filePath) =>
+          /^(?:\d{8}-\d{6}-[a-f0-9]+-\d+i\.log|[a-f0-9]{64})$/.test(
+            path.basename(filePath),
+          ),
+      );
+      await removeExpiredFiles(
+        path.dirname(config.COWRIE_JSON_LOG),
+        config.RAW_SESSION_RETENTION_DAYS,
+        (filePath) => path.basename(filePath).startsWith("cowrie.json."),
+      );
+    }
     markRun("last_cleanup");
   });
   schedule("Hourly Telegram summary", 5 * 60_000, async () => {
