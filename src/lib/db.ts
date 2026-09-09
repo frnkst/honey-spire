@@ -296,7 +296,7 @@ function topValues(
 export function getDashboardData(
   range = "24h",
   beeconId?: string,
-): DashboardData {
+): Omit<DashboardData, "sensors"> {
   const db = getDatabase();
   const normalizedRange = range in rangeMilliseconds ? range : "24h";
   const now = Date.now();

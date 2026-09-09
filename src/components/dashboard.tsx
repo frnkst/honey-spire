@@ -5,15 +5,18 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   Check,
-  Clock3,
   Crosshair,
   Database,
   Globe2,
   LogOut,
   LoaderCircle,
+  Minus,
+  Radio,
   Send,
   ShieldAlert,
   TerminalSquare,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 import {
   BeeconJoinBanner,
@@ -21,11 +24,15 @@ import {
   beeconLabel,
   formatJoined,
   joinedAt,
-  LiveRosterBadge,
   liveBeecons,
   useBeecons,
 } from "@/components/beecons";
-import { AttackGauge, AttackMap, AttackTrend } from "@/components/threat-charts";
+import {
+  AttackGauge,
+  AttackMap,
+  AttackTrend,
+} from "@/components/threat-charts";
+import { HoneySpire } from "@/components/spire";
 import { Brand } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +48,11 @@ import {
 import type { AttackEvent, DashboardData, RankedValue } from "@/lib/types";
 
 const ranges = ["1h", "24h", "7d", "30d"];
+
+const COMPACT_COUNTS = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
 function MetricCard({
   index,
@@ -79,13 +91,35 @@ function MetricCard({
           <p className="mt-7 font-heading text-[2.75rem] font-semibold leading-none tracking-[-.035em]">
             {value}
           </p>
-          <p className="data-label mt-3 text-foreground/75">
-            {label}
+          <p className="data-label mt-3 text-foreground/75">{label}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {detail}
           </p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function GaugeStat({
+  label,
+  value,
+  icon: Icon,
+  tone = "text-foreground",
+}: {
+  label: string;
+  value: string;
+  icon: typeof Activity;
+  tone?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1.5 px-1">
+      <span className={`flex items-center gap-1 font-mono text-sm ${tone}`}>
+        <Icon className="size-3" strokeWidth={1.75} />
+        {value}
+      </span>
+      <span className="data-label">{label}</span>
+    </div>
   );
 }
 
@@ -138,15 +172,24 @@ function RankTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12 pl-5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">Pos</TableHead>
-              <TableHead className="text-[10px] uppercase tracking-[.14em] text-muted-foreground">Signal</TableHead>
-              <TableHead className="pr-5 text-right text-[10px] uppercase tracking-[.14em] text-muted-foreground">Hits</TableHead>
+              <TableHead className="w-12 pl-5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                Pos
+              </TableHead>
+              <TableHead className="text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                Signal
+              </TableHead>
+              <TableHead className="pr-5 text-right text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                Hits
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {values.length ? (
               values.map((item, index) => (
-                <TableRow className="group/row border-white/[.05]" key={`${item.value}-${index}`}>
+                <TableRow
+                  className="group/row border-white/[.05]"
+                  key={`${item.value}-${index}`}
+                >
                   <TableCell className="pl-5 font-mono text-[10px] text-muted-foreground">
                     {String(index + 1).padStart(2, "0")}
                   </TableCell>
@@ -186,7 +229,9 @@ function RankTable({
 }
 
 function formatLocation(attack: AttackEvent) {
-  return [attack.city, attack.countryCode].filter(Boolean).join(", ") || "Unknown";
+  return (
+    [attack.city, attack.countryCode].filter(Boolean).join(", ") || "Unknown"
+  );
 }
 
 export function Dashboard({ initialData }: { initialData: DashboardData }) {
@@ -208,17 +253,20 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     remove,
   } = useBeecons(range, beeconSignal);
 
-  const refresh = useCallback(async (selectedRange: string) => {
-    const response = await fetch(`/api/dashboard?range=${selectedRange}`, {
-      cache: "no-store",
-    });
-    if (response.status === 401) {
-      router.replace("/login");
-      router.refresh();
-      return;
-    }
-    if (response.ok) setData((await response.json()) as DashboardData);
-  }, [router]);
+  const refresh = useCallback(
+    async (selectedRange: string) => {
+      const response = await fetch(`/api/dashboard?range=${selectedRange}`, {
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        router.replace("/login");
+        router.refresh();
+        return;
+      }
+      if (response.ok) setData((await response.json()) as DashboardData);
+    },
+    [router],
+  );
 
   useEffect(() => {
     const interval = setInterval(() => void refresh(range), 30_000);
@@ -282,6 +330,29 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
   const delta = data.currentRate - data.previousRate;
 
+  const liveFleet = liveBeecons(fleet);
+  const activeFleet = (fleet ?? []).filter(
+    (beecon) => beecon.status === "active",
+  );
+  const updatedAt = `Updated ${new Date(data.generatedAt).toLocaleTimeString()}`;
+  const uplinkValue = !fleet
+    ? "…"
+    : connected
+      ? `${liveFleet.length} LIVE`
+      : "SYNC";
+  const uplinkDetail = !fleet
+    ? "Syncing the beecon fleet…"
+    : !connected
+      ? `Stream reconnecting · ${updatedAt}`
+      : liveFleet.length
+        ? `${liveFleet.length}/${activeFleet.length} beecons live · ${liveFleet
+            .map(
+              (beecon) =>
+                `${beeconLabel(beecon)} (since ${formatJoined(joinedAt(beecon))})`,
+            )
+            .join(" · ")}`
+        : `0/${activeFleet.length} beecons live · ${updatedAt}`;
+
   return (
     <main className="threat-field min-h-screen">
       <div className="scan-line" />
@@ -289,7 +360,6 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <div className="mx-auto flex max-w-[1720px] items-center justify-between px-4 py-3 sm:px-7">
           <Brand compact />
           <div className="flex items-center gap-2">
-            <LiveRosterBadge beecons={fleet} connected={connected} />
             <Button
               aria-label="Send update to Telegram"
               disabled={telegramStatus === "sending"}
@@ -357,23 +427,45 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 shell instruction is being observed in real time.
               </p>
             </div>
-            <div>
-              <p className="data-label mb-2 text-right">Observation window</p>
-              <div className="flex rounded-sm border border-white/[.08] bg-black/25 p-1">
-                {ranges.map((item) => (
-                  <Button
-                    className="h-8 flex-1 rounded-[2px] px-4 font-mono text-[10px] uppercase tracking-[.12em] sm:flex-none"
-                    key={item}
-                    onClick={() => {
-                      setRange(item);
-                      void refresh(item);
-                    }}
-                    size="sm"
-                    variant={range === item ? "default" : "ghost"}
-                  >
-                    {item}
-                  </Button>
-                ))}
+            <div className="flex flex-col items-start gap-7 lg:items-end">
+              <div className="glass-card relative hidden overflow-hidden rounded-sm border-white/[.07] md:block">
+                <span className="pointer-events-none absolute left-2 top-2 z-10 size-3 border-l border-t border-primary/50" />
+                <span className="pointer-events-none absolute right-2 top-2 z-10 size-3 border-r border-t border-primary/50" />
+                <span className="pointer-events-none absolute bottom-2 left-2 z-10 size-3 border-b border-l border-primary/50" />
+                <span className="pointer-events-none absolute bottom-2 right-2 z-10 size-3 border-b border-r border-primary/50" />
+                <span className="data-label absolute left-3 top-3 z-10 whitespace-nowrap text-primary">
+                  STRUCT / SPIRE
+                </span>
+                <span className="data-label absolute right-3 top-3 z-10 flex items-center gap-1.5 whitespace-nowrap text-emerald-300">
+                  <span className="size-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.9)]" />
+                  CORE ONLINE
+                </span>
+                <HoneySpire className="mx-auto block h-56 w-64" />
+                <div className="absolute inset-x-3 bottom-3 z-10 flex items-center justify-between whitespace-nowrap">
+                  <span className="data-label">ROT 0.38 RAD/S</span>
+                  <span className="data-label text-secondary">
+                    CELLS 6 × 14
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="data-label mb-2 text-right">Observation window</p>
+                <div className="flex rounded-sm border border-white/[.08] bg-black/25 p-1">
+                  {ranges.map((item) => (
+                    <Button
+                      className="h-8 flex-1 rounded-[2px] px-4 font-mono text-[10px] uppercase tracking-[.12em] sm:flex-none"
+                      key={item}
+                      onClick={() => {
+                        setRange(item);
+                        void refresh(item);
+                      }}
+                      size="sm"
+                      variant={range === item ? "default" : "ghost"}
+                    >
+                      {item}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -412,19 +504,10 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           <MetricCard
             accent="cyan"
             index="04 / UPLINK"
-            detail={
-              liveBeecons(fleet).length
-                ? liveBeecons(fleet)
-                    .map(
-                      (beecon) =>
-                        `${beeconLabel(beecon)} (since ${formatJoined(joinedAt(beecon))})`,
-                    )
-                    .join(" · ")
-                : `Updated ${new Date(data.generatedAt).toLocaleTimeString()}`
-            }
-            icon={Clock3}
+            detail={uplinkDetail}
+            icon={Radio}
             label="Telemetry status"
-            value={connected ? "LIVE" : "SYNC"}
+            value={uplinkValue}
           />
         </section>
 
@@ -435,34 +518,60 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             title="Attack telemetry"
           />
           <div className="grid gap-3 xl:grid-cols-[1.7fr_.8fr]">
-          <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
-            <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
-              <div>
-                <span className="data-label">Historical ingress</span>
-                <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
-                  Attack volume
-                </CardTitle>
-              </div>
-              <Activity className="size-4 text-primary" />
-            </CardHeader>
-            <CardContent className="px-2 pb-2 sm:px-4">
-              <AttackTrend data={data} />
-            </CardContent>
-          </Card>
-          <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
-            <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
-              <div>
-                <span className="data-label">Immediate pressure</span>
-                <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
-                  Live intensity
-                </CardTitle>
-              </div>
-              <Crosshair className="size-4 text-secondary" />
-            </CardHeader>
-            <CardContent className="px-2 pb-2">
-              <AttackGauge data={data} />
-            </CardContent>
-          </Card>
+            <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
+              <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+                <div>
+                  <span className="data-label">Historical ingress</span>
+                  <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+                    Attack volume
+                  </CardTitle>
+                </div>
+                <Activity className="size-4 text-primary" />
+              </CardHeader>
+              <CardContent className="px-2 pb-2 sm:px-4">
+                <AttackTrend data={data} />
+              </CardContent>
+            </Card>
+            <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
+              <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+                <div>
+                  <span className="data-label">Immediate pressure</span>
+                  <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+                    Live intensity
+                  </CardTitle>
+                </div>
+                <Crosshair className="size-4 text-secondary" />
+              </CardHeader>
+              <CardContent className="flex h-full flex-col px-2 pb-3 pt-1">
+                <AttackGauge data={data} />
+                <div className="mt-auto grid grid-cols-3 divide-x divide-white/[.06] border-t border-white/[.06] px-2 pt-3">
+                  <GaugeStat
+                    icon={Activity}
+                    label="1h peak / min"
+                    value={`${data.gaugeMaximum}/m`}
+                  />
+                  <GaugeStat
+                    icon={
+                      delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus
+                    }
+                    label="vs prev min"
+                    tone={
+                      delta > 0
+                        ? "text-[#ff8f6b]"
+                        : delta < 0
+                          ? "text-emerald-300"
+                          : "text-muted-foreground"
+                    }
+                    value={`${delta >= 0 ? "+" : ""}${delta}`}
+                  />
+                  <GaugeStat
+                    icon={ShieldAlert}
+                    label={`${range} total`}
+                    value={COMPACT_COUNTS.format(data.totalAttacks)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </section>
 
@@ -479,6 +588,22 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 Drag to pan / scroll to zoom
               </span>
             </div>
+            <div className="pointer-events-none absolute bottom-4 left-5 z-10 flex items-center gap-4 border-l border-secondary/40 pl-3">
+              <span className="data-label flex items-center gap-1.5">
+                <svg
+                  aria-hidden
+                  className="size-2.5 fill-emerald-400 drop-shadow-[0_0_3px_rgba(52,211,153,.8)]"
+                  viewBox="0 0 10 9"
+                >
+                  <path d="M5 0 10 9H0Z" />
+                </svg>
+                Tower / beecon
+              </span>
+              <span className="data-label flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-primary shadow-[0_0_6px_rgba(255,194,71,.8)]" />
+                Attack origin
+              </span>
+            </div>
             <CardContent className="px-0 pb-0">
               <AttackMap data={data} />
             </CardContent>
@@ -492,9 +617,23 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             title="Credential intelligence"
           />
           <div className="grid gap-3 xl:grid-cols-3">
-            <RankTable index="C.1" mono title="Source addresses" values={data.topIps} />
-            <RankTable index="C.2" title="Usernames" values={data.topUsernames} />
-            <RankTable index="C.3" mono title="Passwords" values={data.topPasswords} />
+            <RankTable
+              index="C.1"
+              mono
+              title="Source addresses"
+              values={data.topIps}
+            />
+            <RankTable
+              index="C.2"
+              title="Usernames"
+              values={data.topUsernames}
+            />
+            <RankTable
+              index="C.3"
+              mono
+              title="Passwords"
+              values={data.topPasswords}
+            />
           </div>
         </section>
 
@@ -504,61 +643,66 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             index="D / SHELL"
             title="Command stream"
           />
-        <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
-          <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
-            <CardTitle className="flex items-center gap-2 font-heading text-base">
-              <TerminalSquare className="size-4 text-secondary" />
-              Commands
-            </CardTitle>
-            <Badge className="rounded-sm font-mono text-[10px]" variant="outline">
-              {data.recentCommands.length} captured
-            </Badge>
-          </CardHeader>
-          <CardContent className="overflow-x-auto px-0">
-            <Table className="min-w-[700px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Time</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Username</TableHead>
-                  <TableHead>Command</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.recentCommands.length ? (
-                  data.recentCommands.map((command) => (
-                    <TableRow key={command.id}>
-                      <TableCell className="pl-6 font-mono text-xs text-muted-foreground">
-                        {new Date(command.occurredAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-primary">
-                        {command.sourceIp}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {command.username || "Unknown"}
-                      </TableCell>
+          <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
+            <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+              <CardTitle className="flex items-center gap-2 font-heading text-base">
+                <TerminalSquare className="size-4 text-secondary" />
+                Commands
+              </CardTitle>
+              <Badge
+                className="rounded-sm font-mono text-[10px]"
+                variant="outline"
+              >
+                {data.recentCommands.length} captured
+              </Badge>
+            </CardHeader>
+            <CardContent className="overflow-x-auto px-0">
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-6">Time</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Username</TableHead>
+                    <TableHead>Command</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.recentCommands.length ? (
+                    data.recentCommands.map((command) => (
+                      <TableRow key={command.id}>
+                        <TableCell className="pl-6 font-mono text-xs text-muted-foreground">
+                          {new Date(command.occurredAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-primary">
+                          {command.sourceIp}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {command.username || "Unknown"}
+                        </TableCell>
+                        <TableCell
+                          className="max-w-xl whitespace-normal break-all font-mono text-xs text-secondary"
+                          title={command.command}
+                        >
+                          <span className="line-clamp-3">
+                            {command.command}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
                       <TableCell
-                        className="max-w-xl whitespace-pre-wrap break-all font-mono text-xs text-secondary"
-                        title={command.command}
+                        className="h-28 text-center text-muted-foreground"
+                        colSpan={4}
                       >
-                        {command.command}
+                        Commands entered in emulated shells appear here.
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      className="h-28 text-center text-muted-foreground"
-                      colSpan={4}
-                    >
-                      Commands entered in emulated shells appear here.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </section>
 
         <section>
@@ -567,67 +711,67 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
             index="E / EVENTS"
             title="Recent attacks"
           />
-        <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
-          <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
-            <div>
-              <span className="data-label">Unfiltered observations</span>
-              <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
-                20 most recent attacks
-              </CardTitle>
-            </div>
-            <Database className="size-4 text-primary" />
-          </CardHeader>
-          <CardContent className="overflow-x-auto px-0">
-            <Table className="min-w-[900px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Time</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Username</TableHead>
-                  <TableHead>Password</TableHead>
-                  <TableHead>Client fingerprint</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.recentAttacks.length ? (
-                  data.recentAttacks.map((attack) => (
-                    <TableRow key={attack.id}>
-                      <TableCell className="pl-6 font-mono text-xs text-muted-foreground">
-                        {new Date(attack.occurredAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-primary">
-                        {attack.sourceIp}
-                      </TableCell>
-                      <TableCell>{formatLocation(attack)}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {attack.username || "(empty)"}
-                      </TableCell>
-                      <TableCell className="max-w-48 truncate font-mono text-xs">
-                        {attack.password || "(empty)"}
-                      </TableCell>
+          <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
+            <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+              <div>
+                <span className="data-label">Unfiltered observations</span>
+                <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+                  20 most recent attacks
+                </CardTitle>
+              </div>
+              <Database className="size-4 text-primary" />
+            </CardHeader>
+            <CardContent className="overflow-x-auto px-0">
+              <Table className="min-w-[900px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-6">Time</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Username</TableHead>
+                    <TableHead>Password</TableHead>
+                    <TableHead>Client fingerprint</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.recentAttacks.length ? (
+                    data.recentAttacks.map((attack) => (
+                      <TableRow key={attack.id}>
+                        <TableCell className="pl-6 font-mono text-xs text-muted-foreground">
+                          {new Date(attack.occurredAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-primary">
+                          {attack.sourceIp}
+                        </TableCell>
+                        <TableCell>{formatLocation(attack)}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {attack.username || "(empty)"}
+                        </TableCell>
+                        <TableCell className="max-w-48 truncate font-mono text-xs">
+                          {attack.password || "(empty)"}
+                        </TableCell>
+                        <TableCell
+                          className="max-w-56 truncate font-mono text-xs text-secondary"
+                          title={attack.hassh ?? attack.clientVersion ?? ""}
+                        >
+                          {attack.hassh ?? attack.clientVersion ?? "Unknown"}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
                       <TableCell
-                        className="max-w-56 truncate font-mono text-xs text-secondary"
-                        title={attack.hassh ?? attack.clientVersion ?? ""}
+                        className="h-28 text-center text-muted-foreground"
+                        colSpan={6}
                       >
-                        {attack.hassh ?? attack.clientVersion ?? "Unknown"}
+                        No attacks recorded yet. Cowrie is listening.
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      className="h-28 text-center text-muted-foreground"
-                      colSpan={6}
-                    >
-                      No attacks recorded yet. Cowrie is listening.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </section>
 
         <section className="reveal mb-12">

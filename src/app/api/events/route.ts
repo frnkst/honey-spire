@@ -13,6 +13,8 @@ export async function GET(request: Request) {
   let cleanup = () => {};
   const stream = new ReadableStream({
     start(controller) {
+      // Flush headers immediately so clients see the connection as open.
+      controller.enqueue(encoder.encode(": connected\n\n"));
       const sendAttack = (attack: AttackEvent) => {
         controller.enqueue(
           encoder.encode(`event: attack\ndata: ${JSON.stringify(attack)}\n\n`),
@@ -20,7 +22,9 @@ export async function GET(request: Request) {
       };
       const sendCommand = (command: CommandEvent) => {
         controller.enqueue(
-          encoder.encode(`event: command\ndata: ${JSON.stringify(command)}\n\n`),
+          encoder.encode(
+            `event: command\ndata: ${JSON.stringify(command)}\n\n`,
+          ),
         );
       };
       const sendBeecon = (beecon: BeeconSummary) => {

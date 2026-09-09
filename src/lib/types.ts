@@ -69,6 +69,18 @@ export interface TrendPoint {
   count: number;
 }
 
+/** A tower/beecon plotted on the attack origin map. */
+export interface MapSensor {
+  id: string;
+  name: string;
+  /** True for the tower's built-in honeypot. */
+  local: boolean;
+  online: boolean;
+  latitude: number;
+  longitude: number;
+  location: string | null;
+}
+
 export interface DashboardData {
   generatedAt: number;
   range: string;
@@ -83,4 +95,5 @@ export interface DashboardData {
   recentCommands: CommandEvent[];
   recentAttacks: AttackEvent[];
   mapAttacks: AttackEvent[];
+  sensors: MapSensor[];
 }

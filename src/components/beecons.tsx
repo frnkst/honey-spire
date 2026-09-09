@@ -101,41 +101,6 @@ export function useBeecons(range: string, refreshSignal: number) {
   return { beecons, pending, error, approve, remove };
 }
 
-/** The header status pill: live state plus which beecons are reporting. */
-export function LiveRosterBadge({
-  connected,
-  beecons,
-}: {
-  connected: boolean;
-  beecons: BeeconSummary[] | null;
-}) {
-  const roster = liveBeecons(beecons).map(
-    (beecon) => `${beeconLabel(beecon)} (since ${formatJoined(joinedAt(beecon))})`,
-  );
-  const shown = roster.slice(0, 3);
-  const hidden = roster.length - shown.length;
-  const label = !connected
-    ? "Reconnecting"
-    : roster.length === 0
-      ? "Live"
-      : `Live · ${shown.join(" · ")}${hidden > 0 ? ` +${hidden}` : ""}`;
-
-  return (
-    <Badge
-      className={
-        connected
-          ? "h-7 rounded-sm border-emerald-400/20 bg-emerald-400/[.08] px-2.5 font-mono text-[10px] uppercase tracking-[.12em] text-emerald-300"
-          : "h-7 rounded-sm border-white/10 bg-white/5 px-2.5 font-mono text-[10px] uppercase tracking-[.12em] text-muted-foreground"
-      }
-      title={roster.length ? roster.join("\n") : undefined}
-      variant="outline"
-    >
-      <Radio className={connected ? "animate-pulse" : ""} />
-      <span className="max-w-[52vw] truncate sm:max-w-[420px]">{label}</span>
-    </Badge>
-  );
-}
-
 export function BeeconJoinBanner({
   pending,
   busyId,
@@ -247,14 +212,18 @@ export function BeeconTable({
     <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
       <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
         <div>
-          <span className="data-label">Remote sensors reporting to this tower</span>
+          <span className="data-label">
+            Remote sensors reporting to this tower
+          </span>
           <CardTitle className="mt-1 flex items-center gap-2 font-heading text-xl uppercase tracking-wide">
             <Radar className="size-4 text-primary" />
             Beecon fleet
           </CardTitle>
         </div>
         <Badge className="rounded-sm font-mono text-[10px]" variant="outline">
-          {beecons ? `${liveBeecons(beecons).length}/${beecons.length} live` : "—"}
+          {beecons
+            ? `${liveBeecons(beecons).length}/${beecons.length} live`
+            : "—"}
         </Badge>
       </CardHeader>
       <CardContent className="overflow-x-auto px-0">
@@ -321,7 +290,8 @@ export function BeeconTable({
                             Deny
                           </Button>
                         </div>
-                      ) : beecon.status === "active" && beecon.id !== "local" ? (
+                      ) : beecon.status === "active" &&
+                        beecon.id !== "local" ? (
                         confirmingId === beecon.id ? (
                           <div className="flex items-center justify-end gap-2">
                             <span className="text-xs text-muted-foreground">

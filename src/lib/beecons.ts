@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { getBeeconSummaries, getDatabase } from "@/lib/db";
-import type { BeeconStatus, BeeconSummary } from "@/lib/types";
+import { geolocateIp } from "@/lib/geolocation";
+import type { BeeconStatus, BeeconSummary, MapSensor } from "@/lib/types";
 
 export const LOCAL_BEECON_ID = "local";
 export const BEECON_OFFLINE_AFTER_MS = 15 * 60_000;
@@ -56,12 +57,10 @@ export interface JoinInput {
  * Joins a beecon by bearer token. Idempotent: re-joining with the same token
  * refreshes the display name, advertised version, and last-seen marker.
  */
-export function registerJoin({
-  name,
-  token,
-  version,
-  ip,
-}: JoinInput): { status: BeeconStatus; beeconId: string } {
+export function registerJoin({ name, token, version, ip }: JoinInput): {
+  status: BeeconStatus;
+  beeconId: string;
+} {
   const db = getDatabase();
   const tokenHash = hashToken(token);
   const now = Date.now();
@@ -154,6 +153,33 @@ export function getBeeconSummary(id: string): BeeconSummary | undefined {
 
 export function listBeecons(since = 0): BeeconSummary[] {
   return getBeeconSummaries(since).map(withOnline);
+}
+
+/**
+ * Geolocates every active sensor's last-seen IP so the dashboard map can plot
+ * the tower and its beecons. Sensors without a usable location are omitted.
+ */
+export async function getMapSensors(): Promise<MapSensor[]> {
+  const sensors = await Promise.all(
+    getBeeconSummaries(0)
+      .map(withOnline)
+      .filter((beecon) => beecon.status === "active" && beecon.lastSeenIp)
+      .map(async (beecon): Promise<MapSensor | null> => {
+        const geo = await geolocateIp(beecon.lastSeenIp as string);
+        if (geo.latitude === null || geo.longitude === null) return null;
+        return {
+          id: beecon.id,
+          name: beecon.name,
+          local: beecon.id === LOCAL_BEECON_ID,
+          online: beecon.online,
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          location:
+            [geo.city, geo.countryCode].filter(Boolean).join(", ") || null,
+        };
+      }),
+  );
+  return sensors.filter((sensor): sensor is MapSensor => sensor !== null);
 }
 
 /**

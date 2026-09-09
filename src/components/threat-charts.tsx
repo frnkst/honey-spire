@@ -132,32 +132,82 @@ export function AttackGauge({ data }: { data: DashboardData }) {
       animationEasing: "cubicOut",
       series: [
         {
+          // Thin inner arc: the previous minute, kept as a reference trace.
           type: "gauge",
           startAngle: 210,
           endAngle: -30,
           min: 0,
           max: data.gaugeMaximum,
-          splitNumber: 5,
+          radius: "64%",
+          center: ["50%", "57%"],
+          pointer: { show: false },
+          progress: {
+            show: true,
+            roundCap: true,
+            width: 4,
+            itemStyle: { color: "rgba(98,200,220,.8)" },
+          },
+          axisLine: {
+            lineStyle: { width: 4, color: [[1, "rgba(241,238,228,.06)"]] },
+          },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { show: false },
+          anchor: { show: false },
+          title: { show: false },
+          detail: { show: false },
+          silent: true,
+          data: [{ value: data.previousRate }],
+        },
+        {
+          type: "gauge",
+          startAngle: 210,
+          endAngle: -30,
+          min: 0,
+          max: data.gaugeMaximum,
+          radius: "94%",
+          center: ["50%", "57%"],
+          splitNumber: 4,
           pointer: {
-            length: "58%",
-            width: 5,
-            itemStyle: { color: "#FFC247" },
+            length: "62%",
+            width: 4,
+            offsetCenter: [0, "10%"],
+            itemStyle: {
+              color: "#FFC247",
+              shadowBlur: 10,
+              shadowColor: "rgba(255,194,71,.55)",
+            },
           },
           progress: {
             show: true,
             roundCap: true,
-            width: 12,
+            width: 13,
             itemStyle: {
-              color: "#FFC247",
-              shadowBlur: 14,
-              shadowColor: "rgba(255,194,71,.35)",
+              color: {
+                type: "linear",
+                x: 0,
+                y: 1,
+                x2: 1,
+                y2: 0,
+                colorStops: [
+                  { offset: 0, color: "#62C8DC" },
+                  { offset: 0.55, color: "#FFC247" },
+                  { offset: 1, color: "#FF7A45" },
+                ],
+              },
+              shadowBlur: 20,
+              shadowColor: "rgba(255,194,71,.4)",
             },
           },
           axisLine: {
             roundCap: true,
             lineStyle: {
-              width: 12,
-              color: [[1, "rgba(241,238,228,.075)"]],
+              width: 13,
+              color: [
+                [0.45, "rgba(98,200,220,.13)"],
+                [0.75, "rgba(255,194,71,.15)"],
+                [1, "rgba(255,98,89,.17)"],
+              ],
             },
           },
           axisTick: { show: false },
@@ -174,31 +224,61 @@ export function AttackGauge({ data }: { data: DashboardData }) {
           },
           anchor: {
             show: true,
-            size: 12,
-            itemStyle: { color: "#080907", borderColor: "#FFC247" },
+            size: 9,
+            itemStyle: {
+              color: "#080907",
+              borderColor: "#FFC247",
+              borderWidth: 1.5,
+            },
           },
           title: {
-            offsetCenter: [0, "68%"],
+            offsetCenter: [0, "62%"],
             color: "#73766e",
             fontFamily: "IBM Plex Mono",
             fontSize: 9,
           },
           detail: {
-            offsetCenter: [0, "35%"],
-            color: "#F1EEE4",
-            fontSize: 34,
-            fontFamily: "Barlow Condensed",
-            fontWeight: 600,
-            formatter: "{value}",
+            offsetCenter: [0, "24%"],
+            formatter: (value: number) => `{v|${Math.round(value)}}{u| /MIN}`,
+            rich: {
+              v: {
+                color: "#F1EEE4",
+                fontSize: 42,
+                fontFamily: "Barlow Condensed",
+                fontWeight: 600,
+              },
+              u: {
+                color: "#73766e",
+                fontSize: 10,
+                fontFamily: "IBM Plex Mono",
+                padding: [14, 0, 0, 4],
+              },
+            },
           },
-          data: [{ value: data.currentRate, name: "ATTACKS / MIN" }],
+          data: [
+            { value: data.currentRate, name: `OF ${data.gaugeMaximum} PEAK` },
+          ],
         },
       ],
     },
-    [data.currentRate, data.gaugeMaximum],
+    [data.currentRate, data.previousRate, data.gaugeMaximum],
   );
 
-  return <div className="h-80 w-full" ref={ref} />;
+  return (
+    <>
+      <div className="h-56 w-full sm:h-60" ref={ref} />
+      <div className="mt-1 flex items-center justify-center gap-5">
+        <span className="data-label flex items-center gap-1.5">
+          <span className="h-[3px] w-4 rounded-full bg-primary shadow-[0_0_8px_rgba(255,194,71,.7)]" />
+          Current minute
+        </span>
+        <span className="data-label flex items-center gap-1.5">
+          <span className="h-[2px] w-4 rounded-full bg-secondary/80" />
+          Previous
+        </span>
+      </div>
+    </>
+  );
 }
 
 export function AttackMap({ data }: { data: DashboardData }) {
@@ -269,6 +349,55 @@ export function AttackMap({ data }: { data: DashboardData }) {
               label: `${attack.city ?? attack.countryName ?? "Unknown"} · ${attack.sourceIp}`,
             })),
           },
+          {
+            // This tower and its beecons: emerald triangles above the attacks.
+            type: "effectScatter",
+            coordinateSystem: "geo",
+            zlevel: 2,
+            symbol: "triangle",
+            rippleEffect: {
+              scale: 2.6,
+              brushType: "stroke",
+              number: 1,
+              period: 4.5,
+            },
+            itemStyle: {
+              color: "#34D399",
+              shadowBlur: 14,
+              shadowColor: "rgba(52,211,153,.65)",
+            },
+            label: {
+              show: true,
+              position: "top",
+              distance: 7,
+              formatter: "{b}",
+              color: "#6EE7B7",
+              fontFamily: "IBM Plex Mono",
+              fontSize: 9,
+              textBorderColor: "rgba(8,9,7,.9)",
+              textBorderWidth: 2,
+            },
+            data: data.sensors.map((sensor) => ({
+              value: [sensor.longitude, sensor.latitude, 1],
+              name: sensor.local ? "TOWER" : sensor.name,
+              label: [
+                sensor.local
+                  ? "TOWER · This server (built-in)"
+                  : `BEECON · ${sensor.name}`,
+                sensor.location ?? "Unknown location",
+                sensor.online ? "online" : "offline",
+              ].join("<br/>"),
+              symbolSize: sensor.online ? 11 : 9,
+              itemStyle: sensor.online
+                ? undefined
+                : {
+                    color: "rgba(52,211,153,.1)",
+                    borderColor: "#34D399",
+                    borderWidth: 1.4,
+                    shadowBlur: 0,
+                  },
+            })),
+          },
         ],
       });
     });
@@ -280,7 +409,7 @@ export function AttackMap({ data }: { data: DashboardData }) {
       window.removeEventListener("resize", resize);
       chart?.dispose();
     };
-  }, [data.mapAttacks]);
+  }, [data.mapAttacks, data.sensors]);
 
   return <div className="h-[28rem] w-full sm:h-[34rem]" ref={element} />;
 }
