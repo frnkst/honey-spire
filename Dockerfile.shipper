@@ -1,0 +1,19 @@
+FROM golang:1.24-alpine AS build
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY cmd/shipper ./cmd/shipper
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /shipper ./cmd/shipper
+
+FROM alpine:3.22
+# uid 999 matches the cowrie container's user on the shared cowrie-data
+# volume; the pre-created chowned state dir makes the fresh named volume
+# writable (named-volume initialization copies image ownership).
+RUN adduser -D -u 999 -g "" shipper \
+    && mkdir -p /data/shipper \
+    && chown 999:999 /data/shipper
+COPY --from=build /shipper /usr/local/bin/shipper
+USER 999:999
+ENTRYPOINT ["/usr/local/bin/shipper"]

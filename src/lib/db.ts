@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { getConfig } from "@/lib/config";
 import type {
   AttackEvent,
+  BeeconSummary,
   CommandEvent,
   DashboardData,
   RankedValue,
@@ -15,6 +16,7 @@ function rowToAttack(row: Record<string, unknown>): AttackEvent {
   return {
     id: Number(row.id),
     occurredAt: Number(row.occurred_at),
+    beeconId: String(row.beecon_id ?? "local"),
     sessionId: String(row.session_id),
     sourceIp: String(row.source_ip),
     sourcePort: row.source_port === null ? null : Number(row.source_port),
@@ -38,6 +40,7 @@ function rowToCommand(row: Record<string, unknown>): CommandEvent {
   return {
     id: Number(row.id),
     occurredAt: Number(row.occurred_at),
+    beeconId: String(row.beecon_id ?? "local"),
     sessionId: String(row.session_id),
     sourceIp: String(row.source_ip),
     username: String(row.username),
@@ -57,9 +60,25 @@ export function getDatabase(): Database.Database {
   database.pragma("foreign_keys = ON");
   database.pragma("cache_size = -8192");
   database.exec(`
+    CREATE TABLE IF NOT EXISTS beecons (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      token_hash TEXT UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'active', 'revoked')),
+      version TEXT,
+      created_at INTEGER NOT NULL,
+      approved_at INTEGER,
+      revoked_at INTEGER,
+      last_seen_at INTEGER,
+      last_seen_ip TEXT,
+      events_received INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS attacks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       occurred_at INTEGER NOT NULL,
+      beecon_id TEXT REFERENCES beecons(id),
       session_id TEXT NOT NULL,
       source_ip TEXT NOT NULL,
       source_port INTEGER,
@@ -84,10 +103,13 @@ export function getDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS attacks_source_ip_idx ON attacks(source_ip, occurred_at);
     CREATE INDEX IF NOT EXISTS attacks_username_idx ON attacks(username, occurred_at);
     CREATE INDEX IF NOT EXISTS attacks_password_idx ON attacks(password, occurred_at);
+    CREATE INDEX IF NOT EXISTS attacks_beecon_idx
+      ON attacks(beecon_id, occurred_at);
 
     CREATE TABLE IF NOT EXISTS command_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       occurred_at INTEGER NOT NULL,
+      beecon_id TEXT REFERENCES beecons(id),
       session_id TEXT NOT NULL,
       source_ip TEXT NOT NULL,
       command TEXT NOT NULL,
@@ -97,6 +119,8 @@ export function getDatabase(): Database.Database {
       ON command_events(occurred_at);
     CREATE INDEX IF NOT EXISTS command_events_session_id_idx
       ON command_events(session_id, occurred_at);
+    CREATE INDEX IF NOT EXISTS command_events_beecon_idx
+      ON command_events(beecon_id, occurred_at);
 
     CREATE TABLE IF NOT EXISTS minute_stats (
       bucket INTEGER PRIMARY KEY,
@@ -116,6 +140,16 @@ export function getDatabase(): Database.Database {
       value TEXT NOT NULL
     );
   `);
+
+  // The built-in beecon represents this server's local honeypot (full mode).
+  database
+    .prepare(
+      `INSERT INTO beecons (id, name, token_hash, status, created_at, approved_at)
+       VALUES ('local', 'local', NULL, 'active', ?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+    )
+    .run(Date.now(), Date.now());
+
   return database;
 }
 
@@ -170,13 +204,15 @@ export function insertAttack(
     const result = db
       .prepare(
         `INSERT OR IGNORE INTO attacks (
-          occurred_at, session_id, source_ip, source_port, username, password,
-          country_code, country_name, city, latitude, longitude, asn,
-          organization, client_version, hassh, algorithms, successful
+          occurred_at, beecon_id, session_id, source_ip, source_port,
+          username, password, country_code, country_name, city, latitude,
+          longitude, asn, organization, client_version, hassh, algorithms,
+          successful
         ) VALUES (
-          @occurredAt, @sessionId, @sourceIp, @sourcePort, @username, @password,
-          @countryCode, @countryName, @city, @latitude, @longitude, @asn,
-          @organization, @clientVersion, @hassh, @algorithms, @successful
+          @occurredAt, @beeconId, @sessionId, @sourceIp, @sourcePort,
+          @username, @password, @countryCode, @countryName, @city, @latitude,
+          @longitude, @asn, @organization, @clientVersion, @hassh,
+          @algorithms, @successful
         )`,
       )
       .run({ ...attack, successful: attack.successful ? 1 : 0 });
@@ -213,8 +249,8 @@ export function insertCommand(
   const result = getDatabase()
     .prepare(
       `INSERT OR IGNORE INTO command_events
-        (occurred_at, session_id, source_ip, command)
-       SELECT @occurredAt, @sessionId, @sourceIp, @command
+        (occurred_at, beecon_id, session_id, source_ip, command)
+       SELECT @occurredAt, @beeconId, @sessionId, @sourceIp, @command
        WHERE (
          SELECT COUNT(*) FROM command_events WHERE session_id = @sessionId
        ) < 10`,
@@ -239,24 +275,28 @@ const rangeMilliseconds: Record<string, number> = {
 function topValues(
   column: "source_ip" | "username" | "password",
   since: number,
+  beeconId?: string,
 ): RankedValue[] {
   return getDatabase()
     .prepare(
       `SELECT ${column} AS value, COUNT(*) AS count
        FROM attacks
-       WHERE occurred_at >= ?
+       WHERE occurred_at >= ?${beeconId ? " AND beecon_id = ?" : ""}
        GROUP BY ${column}
        ORDER BY count DESC, value ASC
        LIMIT 20`,
     )
-    .all(since)
+    .all(...(beeconId ? [since, beeconId] : [since]))
     .map((row) => {
       const typed = row as { value: string; count: number };
       return { value: typed.value, count: Number(typed.count) };
     });
 }
 
-export function getDashboardData(range = "24h"): DashboardData {
+export function getDashboardData(
+  range = "24h",
+  beeconId?: string,
+): DashboardData {
   const db = getDatabase();
   const normalizedRange = range in rangeMilliseconds ? range : "24h";
   const now = Date.now();
@@ -283,8 +323,12 @@ export function getDashboardData(range = "24h"): DashboardData {
   }
 
   const recentRows = db
-    .prepare(`SELECT * FROM attacks ORDER BY occurred_at DESC LIMIT 20`)
-    .all() as Record<string, unknown>[];
+    .prepare(
+      `SELECT * FROM attacks
+       ${beeconId ? "WHERE beecon_id = ?" : ""}
+       ORDER BY occurred_at DESC LIMIT 20`,
+    )
+    .all(...(beeconId ? [beeconId] : [])) as Record<string, unknown>[];
   const commandRows = db
     .prepare(
       `SELECT
@@ -297,20 +341,24 @@ export function getDashboardData(range = "24h"): DashboardData {
           LIMIT 1
         ), '') AS username
        FROM command_events c
+       ${beeconId ? "WHERE c.beecon_id = ?" : ""}
        ORDER BY c.occurred_at DESC
        LIMIT 200`,
     )
-    .all() as Record<string, unknown>[];
+    .all(...(beeconId ? [beeconId] : [])) as Record<string, unknown>[];
   const mapRows = db
     .prepare(
       `SELECT * FROM attacks
-       WHERE occurred_at >= ? AND latitude IS NOT NULL AND longitude IS NOT NULL
+       WHERE occurred_at >= ? AND latitude IS NOT NULL AND longitude IS NOT NULL${beeconId ? " AND beecon_id = ?" : ""}
        ORDER BY occurred_at DESC LIMIT 200`,
     )
-    .all(since) as Record<string, unknown>[];
+    .all(...(beeconId ? [since, beeconId] : [since])) as Record<string, unknown>[];
   const total = db
-    .prepare(`SELECT COUNT(*) AS count FROM attacks WHERE occurred_at >= ?`)
-    .get(since) as { count: number };
+    .prepare(
+      `SELECT COUNT(*) AS count FROM attacks
+       WHERE occurred_at >= ?${beeconId ? " AND beecon_id = ?" : ""}`,
+    )
+    .get(...(beeconId ? [since, beeconId] : [since])) as { count: number };
   const peak = db
     .prepare(
       `SELECT COALESCE(MAX(attack_count), 0) AS count
@@ -328,13 +376,45 @@ export function getDashboardData(range = "24h"): DashboardData {
     totalAttacks: Number(total.count),
     gaugeMaximum: Math.max(10, Number(peak.count)),
     trend: Array.from(trendMap, ([timestamp, count]) => ({ timestamp, count })),
-    topIps: topValues("source_ip", since),
-    topUsernames: topValues("username", since),
-    topPasswords: topValues("password", since),
+    topIps: topValues("source_ip", since, beeconId),
+    topUsernames: topValues("username", since, beeconId),
+    topPasswords: topValues("password", since, beeconId),
     recentCommands: commandRows.map(rowToCommand),
     recentAttacks: recentRows.map(rowToAttack),
     mapAttacks: mapRows.map(rowToAttack),
   };
+}
+
+export function rangeToMilliseconds(range: string): number {
+  return rangeMilliseconds[range] ?? 0;
+}
+
+export function getBeeconSummaries(
+  since = 0,
+): Omit<BeeconSummary, "online">[] {
+  return (
+    getDatabase()
+      .prepare(
+        `SELECT
+          b.id, b.name, b.status, b.version, b.created_at AS createdAt,
+          b.approved_at AS approvedAt, b.revoked_at AS revokedAt,
+          b.last_seen_at AS lastSeenAt, b.last_seen_ip AS lastSeenIp,
+          b.events_received AS eventsReceived,
+          (SELECT COUNT(*) FROM attacks a
+            WHERE a.beecon_id = b.id AND a.occurred_at >= ?) AS attacks,
+          (SELECT COUNT(*) FROM command_events c
+            WHERE c.beecon_id = b.id AND c.occurred_at >= ?) AS commands
+         FROM beecons b
+         ORDER BY b.created_at ASC, b.id ASC`,
+      )
+      .all(since, since) as Omit<BeeconSummary, "online">[]
+  ).map((summary) => ({
+    ...summary,
+    createdAt: Number(summary.createdAt),
+    eventsReceived: Number(summary.eventsReceived),
+    attacks: Number(summary.attacks),
+    commands: Number(summary.commands),
+  }));
 }
 
 export function getMetadata(key: string): string | undefined {

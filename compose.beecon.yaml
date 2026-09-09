@@ -1,0 +1,107 @@
+name: honey-spire
+
+# Beecon install: honeypot only. The shipper tails cowrie's JSON log and
+# POSTs new events to the tower, where they are enriched and stored.
+
+services:
+  cowrie:
+    image: cowrie/cowrie:3.0.13
+    restart: unless-stopped
+    environment:
+      PYTHONPATH: /customizations:/cowrie/cowrie-git/src
+    ports:
+      - "${HONEYPOT_SSH_PORT:-22}:2222"
+    volumes:
+      - cowrie-data:/cowrie/cowrie-git/var
+      - ./deploy/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./deploy/sitecustomize.py:/customizations/sitecustomize.py:ro
+    networks:
+      - honeypot
+    mem_limit: 160m
+    mem_reservation: 96m
+    cpus: 0.35
+    pids_limit: 96
+    ulimits:
+      nofile:
+        soft: 256
+        hard: 256
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  shipper:
+    image: ${HONEY_SPIRE_SHIPPER_IMAGE:-ghcr.io/frnkst/honey-spire-shipper:latest}
+    restart: unless-stopped
+    user: "999:999"
+    depends_on:
+      cowrie:
+        condition: service_healthy
+    environment:
+      TOWER_URL: ${TOWER_URL}
+      BEECON_TOKEN: ${BEECON_TOKEN}
+      BEECON_NAME: ${BEECON_NAME}
+      COWRIE_JSON_LOG: /data/cowrie/log/cowrie/cowrie.json
+      STATE_DIR: /data/shipper
+    volumes:
+      - cowrie-data:/data/cowrie:ro
+      - shipper-data:/data/shipper
+    # Lets the single-box dev recipe (tower on the host) work on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - honeypot
+    mem_limit: 64m
+    mem_reservation: 32m
+    cpus: 0.15
+    pids_limit: 32
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/local/bin/shipper",
+          "-healthcheck",
+        ]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"
+
+networks:
+  honeypot:
+
+volumes:
+  cowrie-data:
+  shipper-data:

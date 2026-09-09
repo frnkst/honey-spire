@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const range = request.nextUrl.searchParams.get("range") ?? "24h";
-  return NextResponse.json(getDashboardData(range), {
+  const beeconId = request.nextUrl.searchParams.get("beecon") ?? undefined;
+  return NextResponse.json(getDashboardData(range, beeconId), {
     headers: { "cache-control": "no-store" },
   });
 }
