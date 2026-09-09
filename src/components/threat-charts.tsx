@@ -502,6 +502,25 @@ export function AttackMap({ data }: { data: DashboardData }) {
             })),
           },
           {
+            // Recon sources: dimmer cyan points beneath the attack ripples.
+            type: "scatter",
+            coordinateSystem: "geo",
+            zlevel: 1,
+            symbolSize: (value: number[]) =>
+              Math.min(14, 4 + Math.log2(Math.max(1, value[2] as number)) * 2),
+            itemStyle: {
+              color: "rgba(98,200,220,.75)",
+              borderColor: "rgba(98,200,220,.4)",
+              borderWidth: 1,
+              shadowBlur: 10,
+              shadowColor: "rgba(98,200,220,.5)",
+            },
+            data: data.mapSignals.map((signal) => ({
+              value: [signal.longitude, signal.latitude, signal.count],
+              label: `${signal.sourceIp} · ${signal.count} recon signal${signal.count === 1 ? "" : "s"}`,
+            })),
+          },
+          {
             // This tower and its beecons: emerald triangles above the attacks.
             type: "effectScatter",
             coordinateSystem: "geo",
@@ -561,7 +580,7 @@ export function AttackMap({ data }: { data: DashboardData }) {
       window.removeEventListener("resize", resize);
       chart?.dispose();
     };
-  }, [data.mapAttacks, data.sensors]);
+  }, [data.mapAttacks, data.sensors, data.mapSignals]);
 
   return <div className="h-[28rem] w-full sm:h-[34rem]" ref={element} />;
 }

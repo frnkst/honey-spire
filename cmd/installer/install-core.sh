@@ -167,6 +167,12 @@ MAXMIND_ACCOUNT_ID="${MAXMIND_ACCOUNT_ID:-}"
 MAXMIND_LICENSE_KEY="${MAXMIND_LICENSE_KEY:-}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
+RECON_SENSORS="${RECON_SENSORS:-on}"
+case "$(printf '%s' "${RECON_SENSORS}" | tr '[:upper:]' '[:lower:]')" in
+  on | true | yes | 1) RECON_SENSORS="on" ;;
+  *) RECON_SENSORS="off" ;;
+esac
+RECON_PORTS="21 23 123 1433 3306 3389 5900 6379 9418 5432 8080 9200 2375 27017"
 if [[ -n "$MAXMIND_ACCOUNT_ID" || -n "$MAXMIND_LICENSE_KEY" ]]; then
   [[ -n "$MAXMIND_ACCOUNT_ID" && -n "$MAXMIND_LICENSE_KEY" ]] ||
     fail "Both the MaxMind account ID and license key are required for GeoLite."
@@ -275,15 +281,18 @@ case "$TOPOLOGY" in
     fetch_file "deploy/Caddyfile" "$INSTALL_DIR/deploy/Caddyfile"
     fetch_file "deploy/cowrie.cfg" "$INSTALL_DIR/deploy/cowrie.cfg"
     fetch_file "deploy/sitecustomize.py" "$INSTALL_DIR/deploy/sitecustomize.py"
+    fetch_file "deploy/opencanary.conf" "$INSTALL_DIR/deploy/opencanary.conf"
     ;;
   tower)
     fetch_file "compose.tower.yaml" "$INSTALL_DIR/compose.yaml"
     fetch_file "deploy/Caddyfile" "$INSTALL_DIR/deploy/Caddyfile"
+    fetch_file "deploy/opencanary.conf" "$INSTALL_DIR/deploy/opencanary.conf"
     ;;
   beecon)
     fetch_file "compose.beecon.yaml" "$INSTALL_DIR/compose.yaml"
     fetch_file "deploy/cowrie.cfg" "$INSTALL_DIR/deploy/cowrie.cfg"
     fetch_file "deploy/sitecustomize.py" "$INSTALL_DIR/deploy/sitecustomize.py"
+    fetch_file "deploy/opencanary.conf" "$INSTALL_DIR/deploy/opencanary.conf"
     ;;
 esac
 for deployed in "$INSTALL_DIR"/deploy/*; do
@@ -307,6 +316,12 @@ else
   SESSION_SECRET="$(openssl rand -hex 32)"
 fi
 
+OPENCANARY_IMAGE="${OPENCANARY_IMAGE:-ghcr.io/frnkst/honey-spire-opencanary:${DEFAULT_IMAGE_TAG}}"
+if [[ "$RECON_SENSORS" == "on" ]]; then
+  step "Preparing recon sensors"
+  pull_image "$OPENCANARY_IMAGE"
+fi
+
 {
   if [[ "$TOPOLOGY" == "beecon" ]]; then
     printf 'HONEY_SPIRE_SHIPPER_IMAGE=%s\n' "$(env_quote "$SHIPPER_IMAGE")"
@@ -314,6 +329,14 @@ fi
     printf 'BEECON_TOKEN=%s\n' "$(env_quote "$BEECON_TOKEN")"
     printf 'BEECON_NAME=%s\n' "$(env_quote "$BEECON_NAME")"
     printf 'HONEYPOT_SSH_PORT=22\n'
+    if [[ "$RECON_SENSORS" == "on" ]]; then
+      printf 'COMPOSE_PROFILES=recon\n'
+      printf 'OPENCANARY_IMAGE=%s\n' "$(env_quote "$OPENCANARY_IMAGE")"
+      printf 'OPENCANARY_JSON_LOG=/data/opencanary/opencanary.json\n'
+      printf 'SENSOR_RECON=on\n'
+      printf 'DECOY_PORTS=5432,9200,2375,27017\n'
+      printf 'RECON_EXCLUDE_PORTS=22,80,443,3001,8080,21,23,123,1433,3306,3389,5900,6379,9418\n'
+    fi
   else
     printf 'SITE_ADDRESS=%s\n' "$(env_quote "$SITE_ADDRESS")"
     printf 'HONEY_SPIRE_IMAGE=%s\n' "$(env_quote "$IMAGE")"
@@ -330,6 +353,12 @@ fi
     printf 'RETENTION_DAYS=90\n'
     printf 'RAW_SESSION_RETENTION_DAYS=7\n'
     printf 'HONEY_SPIRE_MODE=%s\n' "$TOPOLOGY"
+    if [[ "$RECON_SENSORS" == "on" ]]; then
+      printf 'COMPOSE_PROFILES=recon\n'
+      printf 'OPENCANARY_IMAGE=%s\n' "$(env_quote "$OPENCANARY_IMAGE")"
+      printf 'OPENCANARY_JSON_LOG=/data/opencanary/opencanary.json\n'
+      printf 'SENSOR_EVENTS_LOG=/data/sensor/events.json\n'
+    fi
   fi
 } >"$INSTALL_DIR/.env"
 chmod 600 "$INSTALL_DIR/.env"
@@ -347,6 +376,54 @@ if [[ "$TOPOLOGY" != "beecon" ]]; then
   if [[ -n "$DOMAIN" ]]; then
     open_firewall_port 443
   fi
+fi
+if [[ "$RECON_SENSORS" == "on" ]]; then
+  for recon_port in $RECON_PORTS; do
+    open_firewall_port "$recon_port"
+  done
+fi
+
+# With a dashboard domain, stray web traffic (requests to the bare IP or any
+# other hostname) feeds the Opencanary HTTP honeypot instead of getting Caddy's
+# default response. The dashboard's own hostname keeps working normally.
+if [[ "$RECON_SENSORS" == "on" && "$TOPOLOGY" != "beecon" && -n "$DOMAIN" ]]; then
+  step "Routing stray web traffic to the HTTP honeypot"
+  cat >"$INSTALL_DIR/deploy/Caddyfile" <<'EOF'
+{
+	admin off
+}
+
+${SITE_ADDRESS} {
+	encode zstd gzip
+
+	@dashboard host "${SITE_ADDRESS}"
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	handle @dashboard {
+		reverse_proxy app:3000 {
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy opencanary:8080
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 5MiB
+			roll_keep 2
+		}
+		format json
+	}
+}
+EOF
 fi
 
 if [[ "$TOPOLOGY" != "tower" ]]; then
@@ -407,6 +484,22 @@ cd "$INSTALL_DIR"
 docker compose down --remove-orphans
 docker compose up -d
 
+verify_recon_services() {
+  if [[ "$RECON_SENSORS" != "on" ]]; then
+    return
+  fi
+  docker compose ps --status running --services | grep -qx opencanary ||
+    fail "The Opencanary service honeypot did not start."
+  timeout 5 bash -c '</dev/tcp/127.0.0.1/8080' ||
+    fail "Opencanary HTTP is not accepting connections on port 8080."
+  if [[ "$TOPOLOGY" != "beecon" ]]; then
+    docker compose ps --status running --services | grep -qx sensor ||
+      fail "The recon sensor sidecar did not start."
+    docker compose exec -T sensor /usr/local/bin/shipper -healthcheck ||
+      fail "The recon sensor sidecar is not healthy."
+  fi
+}
+
 case "$TOPOLOGY" in
   tower)
     APP_HEALTHY=0
@@ -425,6 +518,7 @@ case "$TOPOLOGY" in
     if docker compose config --services | grep -qx cowrie; then
       fail "The tower deployment unexpectedly contains a honeypot service."
     fi
+    verify_recon_services
     ;;
   beecon)
     docker compose ps --status running --services | grep -qx cowrie ||
@@ -440,6 +534,7 @@ case "$TOPOLOGY" in
       fail "The beecon shipper did not start."
     docker compose exec -T shipper /usr/local/bin/shipper -healthcheck ||
       fail "The beecon shipper is not healthy."
+    verify_recon_services
     ;;
   *)
     APP_HEALTHY=0
@@ -464,6 +559,7 @@ case "$TOPOLOGY" in
       fail "Cowrie is running but host port 22 is not accepting connections."
     docker compose ps --status running --services | grep -qx caddy ||
       fail "The dashboard proxy did not start."
+    verify_recon_services
     ;;
 esac
 

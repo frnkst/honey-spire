@@ -1,6 +1,11 @@
 import { isAuthenticated } from "@/lib/auth";
 import { liveEvents } from "@/lib/live-events";
-import type { AttackEvent, BeeconSummary, CommandEvent } from "@/lib/types";
+import type {
+  AttackEvent,
+  BeeconSummary,
+  CommandEvent,
+  SignalEvent,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -32,17 +37,24 @@ export async function GET(request: Request) {
           encoder.encode(`event: beecon\ndata: ${JSON.stringify(beecon)}\n\n`),
         );
       };
+      const sendSignal = (signal: SignalEvent) => {
+        controller.enqueue(
+          encoder.encode(`event: signal\ndata: ${JSON.stringify(signal)}\n\n`),
+        );
+      };
       const heartbeat = setInterval(() => {
         controller.enqueue(encoder.encode(": heartbeat\n\n"));
       }, 20_000);
       liveEvents.on("attack", sendAttack);
       liveEvents.on("command", sendCommand);
       liveEvents.on("beecon", sendBeecon);
+      liveEvents.on("signal", sendSignal);
       cleanup = () => {
         clearInterval(heartbeat);
         liveEvents.off("attack", sendAttack);
         liveEvents.off("command", sendCommand);
         liveEvents.off("beecon", sendBeecon);
+        liveEvents.off("signal", sendSignal);
       };
       request.signal.addEventListener("abort", cleanup, { once: true });
     },

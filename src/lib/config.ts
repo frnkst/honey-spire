@@ -1,11 +1,17 @@
 import { z } from "zod";
 
 const environmentSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z
+    .enum(["development", "test", "production"])
+    .default("development"),
   HONEY_SPIRE_MODE: z.enum(["full", "tower"]).default("full"),
   DATABASE_PATH: z.string().default("./data/honey-spire.db"),
   COWRIE_JSON_LOG: z.string().default("./data/cowrie/cowrie.json"),
   COWRIE_TTY_DIR: z.string().default("./data/cowrie/tty"),
+  // Recon sources: Opencanary's JSON log and the sensor sidecar's event log.
+  // Empty disables the local tailer (beecons ship these through ingest).
+  OPENCANARY_JSON_LOG: z.string().default(""),
+  SENSOR_EVENTS_LOG: z.string().default(""),
   GEOLITE_DIR: z.string().default("./data/geolite"),
   MAXMIND_ACCOUNT_ID: z
     .string()
@@ -34,12 +40,7 @@ const environmentSchema = z.object({
     .max(168)
     .default(24),
   RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(90),
-  RAW_SESSION_RETENTION_DAYS: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(30)
-    .default(7),
+  RAW_SESSION_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).default(7),
 });
 
 export type AppConfig = z.infer<typeof environmentSchema>;

@@ -38,6 +38,19 @@ attackers tried to do — from any browser.
 
 ![Beecon fleet status](docs/screenshots/beecon-fleet.jpg)
 
+## What gets detected
+
+| Signal | Source |
+| --- | --- |
+| SSH login attempts, captured commands, and client fingerprints | Cowrie honeypot on port 22 |
+| Port scans — SYN, NULL, FIN, XMAS, ACK — and ping sweeps | Raw-socket recon sniffer |
+| Connections to decoy ports (Postgres, Elasticsearch, Docker API, MongoDB) | Built-in decoy listeners |
+| Probes of MySQL, MSSQL, FTP, telnet, VNC, RDP, redis, NTP, and git | Opencanary service honeypots |
+| Web scanner requests — paths, payloads, user agents | Opencanary HTTP on 8080, plus a catch-all for domain installs |
+
+Recon sensors are enabled by default during installation and add roughly
+250 MB of RAM on top of the base footprint.
+
 ## Server requirements
 
 - Ubuntu 22.04, Ubuntu 24.04, or Debian 12

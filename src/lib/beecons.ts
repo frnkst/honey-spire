@@ -126,11 +126,13 @@ export function revokeBeecon(id: string) {
   );
 }
 
-export function touchBeecon(id: string, ip: string, events: number) {
+export function touchBeecon(id: string, ip: string | null, events: number) {
   getDatabase()
     .prepare(
       `UPDATE beecons
-       SET last_seen_at = ?, last_seen_ip = ?, events_received = events_received + ?
+       SET last_seen_at = ?,
+           last_seen_ip = COALESCE(?, last_seen_ip),
+           events_received = events_received + ?
        WHERE id = ?`,
     )
     .run(Date.now(), ip, events, id);

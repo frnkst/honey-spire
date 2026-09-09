@@ -2,15 +2,25 @@ import fs from "node:fs";
 import path from "node:path";
 import { getConfig } from "@/lib/config";
 import { readNewCowrieEvents } from "@/lib/cowrie";
-import { cleanupDatabase, getDatabase, getMetadata, setMetadata } from "@/lib/db";
+import {
+  cleanupDatabase,
+  getDatabase,
+  getMetadata,
+  setMetadata,
+} from "@/lib/db";
 import { updateGeoLiteDatabases } from "@/lib/geolite-updater";
+import { readNewSensorEvents } from "@/lib/signals";
 import { sendTelegramSummary } from "@/lib/telegram";
 
 const runtimeGlobal = globalThis as typeof globalThis & {
   honeySpireRuntimeStarted?: boolean;
 };
 
-function schedule(name: string, intervalMs: number, task: () => Promise<void> | void) {
+function schedule(
+  name: string,
+  intervalMs: number,
+  task: () => Promise<void> | void,
+) {
   let running = false;
   const execute = async () => {
     if (running) return;
@@ -68,6 +78,11 @@ export function startRuntime() {
   // remote beecon events over the ingest API instead.
   if (config.HONEY_SPIRE_MODE === "full") {
     schedule("Cowrie ingestion", 1_000, readNewCowrieEvents);
+  }
+  // Recon sources (sensor sidecar events + Opencanary) exist on both full and
+  // tower installs when their paths are configured.
+  if (config.OPENCANARY_JSON_LOG || config.SENSOR_EVENTS_LOG) {
+    schedule("Sensor ingestion", 1_000, readNewSensorEvents);
   }
   schedule("GeoLite update", 6 * 60 * 60_000, async () => {
     if (!isDue("last_geolite_update", 7 * 24 * 60 * 60_000)) return;

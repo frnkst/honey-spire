@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -77,17 +78,34 @@ func (b *lineBuffer) clear() {
 	b.bytes = 0
 }
 
-// tailer reads new lines from the cowrie log directory, following rotations.
+// tailer reads new lines from a JSON log directory, following rotations.
 // Rotated files are drained oldest-first and the active file is read last,
-// matching how cowrie renames the current log aside on rotation.
+// matching how cowrie renames the current log aside on rotation. An optional
+// transform rewrites each line before it enters the buffer (used to wrap
+// opencanary records in the recon envelope); returning nil drops the line.
 type tailer struct {
 	logPath    string
+	transform  func([]byte) []byte
 	readOffset map[string]int64 // identity key -> next byte to read (in memory)
 	lastWarn   time.Time
 }
 
-func newTailer(logPath string) *tailer {
-	return &tailer{logPath: logPath, readOffset: map[string]int64{}}
+func newTailer(logPath string, transform func([]byte) []byte) *tailer {
+	return &tailer{logPath: logPath, transform: transform, readOffset: map[string]int64{}}
+}
+
+// wrapOpencanaryLine envelopes a raw opencanary JSON record so the tower can
+// tell it apart from a cowrie record. Unparseable lines are dropped.
+func wrapOpencanaryLine(data []byte) []byte {
+	var record map[string]any
+	if json.Unmarshal(data, &record) != nil {
+		return nil
+	}
+	wrapped, err := json.Marshal(map[string]any{"kind": "opencanary", "record": record})
+	if err != nil {
+		return nil
+	}
+	return wrapped
 }
 
 // reset rewinds the in-memory read offsets to the acked state, so lines that
@@ -212,11 +230,17 @@ func (t *tailer) readFile(path, key string, size int64, buffer *lineBuffer) erro
 					break
 				}
 				end := consumed + newline
-				buffer.push(line{
-					key:       key,
-					endOffset: offset + int64(newline) + 1,
-					data:      append([]byte{}, pending[consumed:end]...),
-				})
+				data := append([]byte{}, pending[consumed:end]...)
+				if t.transform != nil {
+					data = t.transform(data)
+				}
+				if data != nil {
+					buffer.push(line{
+						key:       key,
+						endOffset: offset + int64(newline) + 1,
+						data:      data,
+					})
+				}
 				consumed += newline + 1
 			}
 			offset += int64(consumed)

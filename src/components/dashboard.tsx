@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -141,6 +141,35 @@ function SectionHeading({
       </div>
       <p className="data-label hidden sm:block">{detail}</p>
     </div>
+  );
+}
+
+function ReconShell({
+  index,
+  title,
+  tag,
+  children,
+}: {
+  index: string;
+  title: string;
+  tag: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="glass-card instrument-card cyan-instrument reveal min-w-0 border-white/[.07]">
+      <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+        <div>
+          <span className="section-index">{index}</span>
+          <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+            {title}
+          </CardTitle>
+        </div>
+        <span className="data-label">{tag}</span>
+      </CardHeader>
+      <CardContent className="max-h-[24rem] overflow-y-auto px-0">
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -580,6 +609,12 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 <span className="size-2 rounded-full bg-primary shadow-[0_0_6px_rgba(255,194,71,.8)]" />
                 Attack origin
               </span>
+              {data.mapSignals.length > 0 ? (
+                <span className="data-label flex items-center gap-1.5">
+                  <span className="size-2 rounded-full bg-secondary/80 shadow-[0_0_6px_rgba(98,200,220,.8)]" />
+                  Recon source
+                </span>
+              ) : null}
             </div>
             <CardContent className="px-0 pb-0">
               <AttackMap data={data} />
@@ -589,24 +624,156 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
         <section className="reveal reveal-delay-3 mb-12">
           <SectionHeading
+            detail={`${COMPACT_COUNTS.format(
+              data.signalTrend.reduce((sum, point) => sum + point.count, 0),
+            )} signals across selected ${range} window`}
+            index="C / RECON"
+            title="Recon activity"
+          />
+          <div className="grid gap-3 xl:grid-cols-3">
+            <ReconShell index="C.1" tag="Most probed" title="Targeted ports">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                      Port
+                    </TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                      Probes
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.topTargetedPorts.length ? (
+                    data.topTargetedPorts.map((port) => (
+                      <TableRow key={port.port} className="border-white/[.05]">
+                        <TableCell className="pl-5 font-mono text-xs text-secondary">
+                          {port.port}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs text-primary">
+                          {port.count}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        className="h-16 text-center text-muted-foreground"
+                        colSpan={2}
+                      >
+                        No port probes captured
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ReconShell>
+            <ReconShell index="C.2" tag="Raw requests" title="HTTP probes">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                      Path
+                    </TableHead>
+                    <TableHead className="text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                      Source
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.recentHttp.length ? (
+                    data.recentHttp.map((probe, index) => (
+                      <TableRow
+                        key={`${probe.occurredAt}-${probe.sourceIp}-${index}`}
+                        className="border-white/[.05]"
+                      >
+                        <TableCell
+                          className="max-w-[12rem] truncate pl-5 font-mono text-xs text-secondary"
+                          title={probe.path}
+                        >
+                          {probe.path || "/"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {probe.sourceIp}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        className="h-16 text-center text-muted-foreground"
+                        colSpan={2}
+                      >
+                        No HTTP probes captured
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ReconShell>
+            <ReconShell index="C.3" tag="Loudest sources" title="Top scanners">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                      Source
+                    </TableHead>
+                    <TableHead className="text-right text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                      Signals
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.topScannerIps.length ? (
+                    data.topScannerIps.map((scanner) => (
+                      <TableRow
+                        key={scanner.value}
+                        className="border-white/[.05]"
+                      >
+                        <TableCell className="pl-5 font-mono text-xs text-secondary">
+                          {scanner.value}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs text-primary">
+                          {scanner.count}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        className="h-16 text-center text-muted-foreground"
+                        colSpan={2}
+                      >
+                        No scanners captured
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ReconShell>
+          </div>
+        </section>
+
+        <section className="reveal reveal-delay-3 mb-12">
+          <SectionHeading
             detail={`Ranked across selected ${range} window`}
-            index="C / PATTERNS"
+            index="D / PATTERNS"
             title="Credential intelligence"
           />
           <div className="grid gap-3 xl:grid-cols-3">
             <RankTable
-              index="C.1"
+              index="D.1"
               mono
               title="Source addresses"
               values={data.topIps}
             />
             <RankTable
-              index="C.2"
+              index="D.2"
               title="Usernames"
               values={data.topUsernames}
             />
             <RankTable
-              index="C.3"
+              index="D.3"
               mono
               title="Passwords"
               values={data.topPasswords}
@@ -617,7 +784,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <section className="mb-12">
           <SectionHeading
             detail="Accepted emulation sessions"
-            index="D / SHELL"
+            index="E / SHELL"
             title="Command stream"
           />
           <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
@@ -685,7 +852,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         <section>
           <SectionHeading
             detail="Raw credential and fingerprint feed"
-            index="E / EVENTS"
+            index="F / EVENTS"
             title="Recent attacks"
           />
           <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
@@ -758,7 +925,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 ? `${liveBeecons(fleet).length} of ${fleet.length} beecons online`
                 : "Fleet telemetry"
             }
-            index="F / FLEET"
+            index="G / FLEET"
             title="Beecon fleet"
           />
           <BeeconTable

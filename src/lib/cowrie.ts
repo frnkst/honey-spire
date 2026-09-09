@@ -118,8 +118,7 @@ export async function processCowrieRecord(
     beeconId,
     sessionId,
     sourceIp,
-    sourcePort:
-      typeof record.src_port === "number" ? record.src_port : null,
+    sourcePort: typeof record.src_port === "number" ? record.src_port : null,
     username: String(record.username ?? "").slice(0, 512),
     password: String(record.password ?? "").slice(0, 1024),
     ...geo,
@@ -131,10 +130,19 @@ export async function processCowrieRecord(
   if (attack) liveEvents.emit("attack", attack);
 }
 
-async function readLogFile(logPath: string) {
+/**
+ * Streams complete JSON lines that appeared in a log file since the last call,
+ * resuming from a durable per-file offset and following rotations. The
+ * namespace keeps each source's offsets separate in the metadata table.
+ */
+export async function tailJsonLogFile(
+  logPath: string,
+  namespace: string,
+  onRecord: (record: Record<string, unknown>) => void | Promise<void>,
+) {
   const baseName = path.basename(logPath);
-  const metadataKey = `cowrie_offset_${baseName}`;
-  const identityKey = `cowrie_identity_${baseName}`;
+  const metadataKey = `${namespace}_offset_${baseName}`;
+  const identityKey = `${namespace}_identity_${baseName}`;
   const stat = fs.statSync(logPath);
   const size = stat.size;
   const identity = `${stat.dev}:${stat.ino}`;
@@ -165,14 +173,14 @@ async function readLogFile(logPath: string) {
           try {
             record = JSON.parse(line) as CowrieRecord;
           } catch (error) {
-            console.warn("Skipping malformed Cowrie JSON record:", error);
+            console.warn(`Skipping malformed ${namespace} JSON record:`, error);
             offset += bytesConsumed;
             setMetadata(metadataKey, String(offset));
             pending = pending.subarray(bytesConsumed);
             newline = pending.indexOf(0x0a);
             continue;
           }
-          await processCowrieRecord(record);
+          await onRecord(record);
         }
         offset += bytesConsumed;
         setMetadata(metadataKey, String(offset));
@@ -185,8 +193,12 @@ async function readLogFile(logPath: string) {
   }
 }
 
-export async function readNewCowrieEvents() {
-  const configuredPath = getConfig().COWRIE_JSON_LOG;
+/** Reads every (possibly rotated) log file of one source, oldest first. */
+export async function tailJsonLogSource(
+  configuredPath: string,
+  namespace: string,
+  onRecord: (record: Record<string, unknown>) => void | Promise<void>,
+) {
   const directory = path.dirname(configuredPath);
   const baseName = path.basename(configuredPath);
   if (!fs.existsSync(directory)) return;
@@ -197,8 +209,15 @@ export async function readNewCowrieEvents() {
     .map((name) => path.join(directory, name));
 
   for (const logPath of logPaths) {
-    await readLogFile(logPath);
+    await tailJsonLogFile(logPath, namespace, onRecord);
   }
-  // Keep the built-in beecon's presence fresh for the fleet view.
-  touchBeecon(LOCAL_BEECON_ID, "local", 0);
+}
+
+export async function readNewCowrieEvents() {
+  await tailJsonLogSource(getConfig().COWRIE_JSON_LOG, "cowrie", (record) =>
+    processCowrieRecord(record),
+  );
+  // Keep the built-in beecon's presence fresh for the fleet view without
+  // clobbering its last-seen address (there is no meaningful local IP).
+  touchBeecon(LOCAL_BEECON_ID, null, 0);
 }

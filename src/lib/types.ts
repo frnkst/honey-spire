@@ -88,6 +88,58 @@ export interface MapSensor {
   location: string | null;
 }
 
+/**
+ * Recon activity beyond SSH logins: port scans, decoy-port connections,
+ * HTTP probes, and low-interaction service honeypot hits.
+ */
+export type SignalKind = "scan" | "decoy" | "http" | "service";
+
+export interface SignalEvent {
+  id: number;
+  occurredAt: number;
+  beeconId: string;
+  kind: SignalKind;
+  sourceIp: string;
+  /** The attacker's ephemeral source port, when known. */
+  sourcePort: number | null;
+  /** Transport or application protocol, e.g. tcp, icmp, mysql, http. */
+  protocol: string | null;
+  /** Classifier result for scans: syn, null, fin, xmas, ack, ping_sweep. */
+  scanType: string | null;
+  /** Sampled target ports for scan events. */
+  ports: number[] | null;
+  summary: string;
+  /** Captured bytes or the raw probe record, truncated. */
+  detail: string | null;
+  countryCode: string | null;
+  countryName: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  asn: number | null;
+  organization: string | null;
+}
+
+export interface MapSignalPoint {
+  sourceIp: string;
+  count: number;
+  latitude: number;
+  longitude: number;
+}
+
+export interface PortRank {
+  port: number;
+  count: number;
+}
+
+export interface HttpProbe {
+  occurredAt: number;
+  sourceIp: string;
+  sourcePort: number | null;
+  path: string;
+  userAgent: string | null;
+}
+
 export interface DashboardData {
   generatedAt: number;
   range: string;
@@ -104,4 +156,10 @@ export interface DashboardData {
   recentAttacks: AttackEvent[];
   mapAttacks: AttackEvent[];
   sensors: MapSensor[];
+  signalTrend: TrendPoint[];
+  topScannerIps: RankedValue[];
+  topTargetedPorts: PortRank[];
+  recentHttp: HttpProbe[];
+  recentSignals: SignalEvent[];
+  mapSignals: MapSignalPoint[];
 }

@@ -264,11 +264,13 @@ func TestTopologySelectionFlow(t *testing.T) {
 	if m.screen != screenField || m.config.topology != topologyBeecon {
 		t.Fatalf("expected beecon fields, got screen %d", m.screen)
 	}
-	if got := len(m.fields); got != 2 {
-		t.Fatalf("expected 2 beecon fields, got %d", got)
+	if got := len(m.fields); got != 3 {
+		t.Fatalf("expected 3 beecon fields, got %d", got)
 	}
-	if m.fields[0].key != "tower_address" || m.fields[1].key != "beecon_name" {
-		t.Fatalf("unexpected beecon fields: %q, %q", m.fields[0].key, m.fields[1].key)
+	if m.fields[0].key != "tower_address" || m.fields[1].key != "beecon_name" ||
+		m.fields[2].key != "recon" {
+		t.Fatalf("unexpected beecon fields: %q, %q, %q",
+			m.fields[0].key, m.fields[1].key, m.fields[2].key)
 	}
 
 	// Escaping the first field returns to the topology screen.

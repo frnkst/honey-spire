@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -28,7 +29,13 @@ type config struct {
 	name              string
 	version           string
 	logPath           string
+	opencanaryLog     string
 	stateDir          string
+	sidecar           bool
+	recon             bool
+	decoyPorts        []int
+	excludedPorts     []int
+	eventLog          string
 	flushInterval     time.Duration
 	batchMaxEvents    int
 	batchMaxBytes     int
@@ -69,25 +76,63 @@ func envInt(key string, fallback int) (int, error) {
 	return parsed, nil
 }
 
+func envBool(key string) bool {
+	value := strings.ToLower(os.Getenv(key))
+	return value == "1" || value == "true" || value == "on" || value == "yes"
+}
+
+// envPortList parses a comma-separated port list. Empty input yields the
+// fallback; malformed entries are an error so typos never silently disable
+// a sensor.
+func envPortList(key string, fallback []int) ([]int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	var ports []int
+	for _, field := range strings.Split(value, ",") {
+		port, err := strconv.Atoi(strings.TrimSpace(field))
+		if err != nil || port <= 0 || port > 65535 {
+			return nil, fmt.Errorf("%s must be a comma-separated list of ports, got %q", key, value)
+		}
+		ports = append(ports, port)
+	}
+	return ports, nil
+}
+
 func loadConfig() (config, error) {
 	cfg := config{
-		version:  version,
-		name:     os.Getenv("BEECON_NAME"),
-		token:    os.Getenv("BEECON_TOKEN"),
-		logPath:  envString("COWRIE_JSON_LOG", "/data/cowrie/log/cowrie/cowrie.json"),
-		stateDir: envString("STATE_DIR", "/data/shipper"),
+		version:       version,
+		name:          os.Getenv("BEECON_NAME"),
+		token:         os.Getenv("BEECON_TOKEN"),
+		logPath:       envString("COWRIE_JSON_LOG", "/data/cowrie/log/cowrie/cowrie.json"),
+		opencanaryLog: os.Getenv("OPENCANARY_JSON_LOG"),
+		stateDir:      envString("STATE_DIR", "/data/shipper"),
+		sidecar:       os.Getenv("SENSOR_ROLE") == "sidecar",
+		recon:         envBool("SENSOR_RECON"),
 	}
 
 	var err error
+	if cfg.decoyPorts, err = envPortList("DECOY_PORTS", nil); err != nil {
+		return cfg, err
+	}
+	if cfg.excludedPorts, err = envPortList("RECON_EXCLUDE_PORTS", []int{22, 80, 443, 3001, 8080}); err != nil {
+		return cfg, err
+	}
+
 	var missing []string
-	if cfg.towerURL = envString("TOWER_URL", ""); cfg.towerURL == "" {
-		missing = append(missing, "TOWER_URL")
-	}
-	if cfg.token == "" {
-		missing = append(missing, "BEECON_TOKEN")
-	}
-	if cfg.name == "" {
-		missing = append(missing, "BEECON_NAME")
+	if !cfg.sidecar {
+		// The sidecar on tower/full installs writes recon events to a local
+		// file for the app to tail; it never talks to the tower.
+		if cfg.towerURL = envString("TOWER_URL", ""); cfg.towerURL == "" {
+			missing = append(missing, "TOWER_URL")
+		}
+		if cfg.token == "" {
+			missing = append(missing, "BEECON_TOKEN")
+		}
+		if cfg.name == "" {
+			missing = append(missing, "BEECON_NAME")
+		}
 	}
 	if len(missing) > 0 {
 		return cfg, fmt.Errorf("missing required environment variables: %s", missing)
@@ -154,6 +199,9 @@ func run(cfg config) error {
 	if err := os.MkdirAll(cfg.stateDir, 0o755); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
+	if cfg.sidecar {
+		return runSidecar(cfg)
+	}
 	state, err := loadState(cfg.stateDir)
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
@@ -162,8 +210,21 @@ func run(cfg config) error {
 
 	client := newTowerClient(cfg, cfg.httpTimeout)
 	buffer := &lineBuffer{}
-	tail := newTailer(cfg.logPath)
+	tail := newTailer(cfg.logPath, nil)
 	retry := newBackoff()
+
+	var canaryTail *tailer
+	if cfg.opencanaryLog != "" {
+		canaryTail = newTailer(cfg.opencanaryLog, wrapOpencanaryLine)
+	}
+
+	reconEvents := make(chan string, 256)
+	if cfg.recon {
+		startRecon(cfg, reconEvents)
+	}
+	if len(cfg.decoyPorts) > 0 {
+		startDecoys(cfg.decoyPorts, reconEvents)
+	}
 
 	log.Printf("Honey Spire beecon shipper %s shipping to %s", version, cfg.towerURL)
 
@@ -201,13 +262,21 @@ func run(cfg config) error {
 				retry.reset()
 				rejoined = false
 				tail.reset(state)
+				resetIfNotNil(canaryTail, state)
 				lastHeartbeat = now
 			}
 			continue
 		}
 
+		drainEvents(reconEvents, buffer)
+
 		if err := tail.collect(state, buffer); err != nil {
 			log.Printf("Tailing %s failed: %v", cfg.logPath, err)
+		}
+		if canaryTail != nil {
+			if err := canaryTail.collect(state, buffer); err != nil {
+				log.Printf("Tailing %s failed: %v", cfg.opencanaryLog, err)
+			}
 		}
 
 		if now.Before(nextAttempt) {
@@ -256,6 +325,7 @@ func run(cfg config) error {
 				if status := client.join(); status.status == shipRevoked {
 					log.Println("Beecon removed by the tower; shipping disabled.")
 					tail.reset(state)
+					resetIfNotNil(canaryTail, state)
 					buffer.clear()
 					parked = true
 					break flush
@@ -265,6 +335,7 @@ func run(cfg config) error {
 			case shipRevoked:
 				log.Println("Beecon removed by the tower; shipping disabled.")
 				tail.reset(state)
+				resetIfNotNil(canaryTail, state)
 				buffer.clear()
 				parked = true
 				break flush
@@ -289,9 +360,13 @@ func run(cfg config) error {
 
 // ackOffsets advances the shipped offset per file to the furthest line of the
 // acked batch. Batches are FIFO prefixes, so offsets only ever move forward.
+// Lines without a file (recon events) carry no offset state.
 func ackOffsets(state *shipperState, batch []line) {
 	now := time.Now().UnixMilli()
 	for _, entry := range batch {
+		if entry.key == "" {
+			continue
+		}
 		file := state.Files[entry.key]
 		if file == nil {
 			file = &fileState{Path: "?"}
@@ -302,6 +377,55 @@ func ackOffsets(state *shipperState, batch []line) {
 		}
 		file.UpdatedAt = now
 	}
+}
+
+// runSidecar is the tower/full-install sensor mode: recon events are appended
+// to a JSON-lines file on a shared volume; the Honey Spire app tails it and
+// enriches them, exactly like its local Cowrie tailer.
+func runSidecar(cfg config) error {
+	touchAlive(cfg.stateDir)
+	eventLog := cfg.eventLog
+	if eventLog == "" {
+		eventLog = filepath.Join(cfg.stateDir, "events.json")
+	}
+
+	events := make(chan string, 256)
+	if cfg.recon {
+		startRecon(cfg, events)
+	} else {
+		log.Println("Recon sniffing is disabled (SENSOR_RECON is off).")
+	}
+	if len(cfg.decoyPorts) > 0 {
+		startDecoys(cfg.decoyPorts, events)
+	}
+
+	file, err := os.OpenFile(eventLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("open sensor event log: %w", err)
+	}
+	defer file.Close()
+
+	log.Printf("Honey Spire sensor sidecar writing recon events to %s", eventLog)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		touchAlive(cfg.stateDir)
+	flush:
+		for {
+			select {
+			case event := <-events:
+				if event == "" {
+					continue
+				}
+				if _, err := file.WriteString(event + "\n"); err != nil {
+					log.Printf("Writing sensor event failed: %v", err)
+				}
+			default:
+				break flush
+			}
+		}
+	}
+	return nil
 }
 
 func main() {

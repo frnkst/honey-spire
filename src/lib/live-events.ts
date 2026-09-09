@@ -1,5 +1,10 @@
 import { EventEmitter } from "node:events";
-import type { AttackEvent, BeeconSummary, CommandEvent } from "@/lib/types";
+import type {
+  AttackEvent,
+  BeeconSummary,
+  CommandEvent,
+  SignalEvent,
+} from "@/lib/types";
 
 const globalEvents = globalThis as typeof globalThis & {
   honeySpireEvents?: EventEmitter;
@@ -11,6 +16,7 @@ export const liveEvents =
     attack: [AttackEvent];
     command: [CommandEvent];
     beecon: [BeeconSummary];
+    signal: [SignalEvent];
   }>();
 
 liveEvents.setMaxListeners(100);

@@ -9,7 +9,7 @@ import (
 
 func newTestTail(t *testing.T, logPath string) (*tailer, *shipperState, *lineBuffer) {
 	t.Helper()
-	return newTailer(logPath), newState(), &lineBuffer{}
+	return newTailer(logPath, nil), newState(), &lineBuffer{}
 }
 
 func collectLines(t *testing.T, tail *tailer, state *shipperState, buffer *lineBuffer) []string {

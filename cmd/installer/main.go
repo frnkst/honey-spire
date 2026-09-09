@@ -82,6 +82,7 @@ type installConfig struct {
 	telegramChatID    string
 	towerURL          string
 	beeconName        string
+	recon             string
 	generatedPassword bool
 }
 
@@ -198,6 +199,7 @@ func newModel() (model, error) {
 		mode:              "quick",
 		adminUsername:     "admin",
 		adminPassword:     password,
+		recon:             "on",
 		generatedPassword: true,
 	}
 	return model{
@@ -221,6 +223,7 @@ func beeconFields() []formField {
 	return []formField{
 		newField("tower_address", "Tower address", "Domain or IP of the tower dashboard, for example tower.example.com. Domains are reached over HTTPS; a bare IP falls back to HTTP when the tower has no TLS.", "tower.example.com", false, ""),
 		newField("beecon_name", "Display name", "Shown on the tower dashboard and in the join request. Spaces are allowed.", "edge-server-01", false, hostname),
+		newField("recon", "Recon sensors", "on or off. Enables nmap scan detection, decoy ports, and Opencanary service honeypots on this beecon.", "on", false, "on"),
 	}
 }
 
@@ -233,6 +236,7 @@ func advancedFields() []formField {
 		newField("maxmind_key", "MaxMind license key", "Required with the account ID. The key is never written to the installer log.", "GeoLite license key", true, ""),
 		newField("telegram_token", "Telegram bot token", "Optional. Enables scheduled and on-demand threat summaries.", "Leave blank to disable", true, ""),
 		newField("telegram_chat", "Telegram chat or channel", "Required only when a bot token is configured.", "@channel or numeric chat ID", false, ""),
+		newField("recon", "Recon sensors", "on or off. Enables nmap scan detection, decoy ports, and Opencanary service honeypots (MySQL, FTP, telnet, VNC, RDP, redis, NTP). Adds about 250 MB RAM.", "on", false, "on"),
 	}
 }
 
@@ -491,6 +495,7 @@ func configFromFields(fields []formField) installConfig {
 			topology:   topologyBeecon,
 			towerURL:   values["tower_address"],
 			beeconName: values["beecon_name"],
+			recon:      normalizeRecon(values["recon"]),
 		}
 	}
 	return installConfig{
@@ -503,6 +508,18 @@ func configFromFields(fields []formField) installConfig {
 		maxmindKey:       values["maxmind_key"],
 		telegramBotToken: values["telegram_token"],
 		telegramChatID:   values["telegram_chat"],
+		recon:            normalizeRecon(values["recon"]),
+	}
+}
+
+// normalizeRecon accepts common spellings; anything unrecognized keeps the
+// sensors off rather than half-enabled.
+func normalizeRecon(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "on", "true", "yes", "1":
+		return "on"
+	default:
+		return "off"
 	}
 }
 
@@ -539,6 +556,12 @@ func validateField(key, value string, fields []formField) error {
 		}
 		if value != "" && !regexp.MustCompile(`^(@[A-Za-z0-9_]{5,}|-?[0-9]+)$`).MatchString(value) {
 			return fmt.Errorf("use @channel_name or a numeric Telegram chat ID")
+		}
+	case "recon":
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "on", "off", "true", "false", "yes", "no", "1", "0":
+		default:
+			return fmt.Errorf("enter on or off")
 		}
 	}
 	return nil
@@ -687,6 +710,7 @@ func runInstaller(config installConfig, events chan<- tea.Msg) {
 		"TELEGRAM_CHAT_ID="+config.telegramChatID,
 		"TOWER_URL="+config.towerURL,
 		"BEECON_NAME="+config.beeconName,
+		"RECON_SENSORS="+config.recon,
 	)
 
 	logPath := valueOr(os.Getenv("HONEY_SPIRE_LOG_FILE"), "/var/log/honey-spire-install.log")
@@ -973,6 +997,7 @@ func (m model) reviewView(width int) string {
 			summaryRow("ADMIN", m.config.adminUsername),
 			summaryRow("GEOIP", configuredLabel(m.config.maxmindAccountID)),
 			summaryRow("TELEGRAM", configuredLabel(m.config.telegramBotToken)),
+			summaryRow("RECON", strings.ToUpper(m.config.recon)),
 			summaryRow("REAL SSH", "Unchanged (port 22)"),
 			summaryRow("HONEYPOT", "None - remote beecons report to this dashboard"),
 		}
@@ -981,6 +1006,7 @@ func (m model) reviewView(width int) string {
 			summaryRow("TOPOLOGY", "BEECON"),
 			summaryRow("TOWER", m.config.towerURL),
 			summaryRow("DISPLAY NAME", m.config.beeconName),
+			summaryRow("RECON", strings.ToUpper(m.config.recon)),
 			summaryRow("REAL SSH", "Port 3001"),
 			summaryRow("HONEYPOT", "Port 22"),
 			summaryRow("JOINING", "You will approve this beecon on the tower's dashboard after install"),
@@ -993,6 +1019,7 @@ func (m model) reviewView(width int) string {
 			summaryRow("ADMIN", m.config.adminUsername),
 			summaryRow("GEOIP", configuredLabel(m.config.maxmindAccountID)),
 			summaryRow("TELEGRAM", configuredLabel(m.config.telegramBotToken)),
+			summaryRow("RECON", strings.ToUpper(m.config.recon)),
 			summaryRow("REAL SSH", "Port 3001"),
 			summaryRow("HONEYPOT", "Port 22"),
 		}

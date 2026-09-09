@@ -10,7 +10,10 @@ function rankedLines(
   return values.length
     ? values
         .slice(0, 5)
-        .map((item, index) => `${index + 1}. ${item.value || "(empty)"} — ${item.count}`)
+        .map(
+          (item, index) =>
+            `${index + 1}. ${item.value || "(empty)"} — ${item.count}`,
+        )
     : [emptyMessage];
 }
 
@@ -23,10 +26,11 @@ export async function sendTelegramSummary(period: TelegramPeriod) {
   const duration = hourly ? 60 * 60_000 : 24 * 60 * 60_000;
   const data = getDashboardData(range);
   const details = getTelegramDetails(Date.now() - duration);
-  const title =
-    period === "ad-hoc" ? "on-demand report" : `${period} summary`;
+  const title = period === "ad-hoc" ? "on-demand report" : `${period} summary`;
   const recentAttempts = details.recentAttacks.map((attack) => {
-    const location = [attack.city, attack.countryCode].filter(Boolean).join(", ");
+    const location = [attack.city, attack.countryCode]
+      .filter(Boolean)
+      .join(", ");
     const client = attack.clientVersion ?? "unknown client";
     return `${attack.successful ? "✅" : "❌"} ${attack.sourceIp} · ${attack.username || "(empty)"} · ${location || "unknown location"} · ${client}`;
   });
@@ -34,6 +38,18 @@ export async function sendTelegramSummary(period: TelegramPeriod) {
     (command) =>
       `${command.sourceIp} · ${command.username || "(unknown)"} · ${command.command}`,
   );
+  const signalCount = data.signalTrend.reduce(
+    (sum, point) => sum + point.count,
+    0,
+  );
+  const recentSignals = data.recentSignals.slice(0, 5).map((signal) => {
+    const location = [signal.city, signal.countryCode]
+      .filter(Boolean)
+      .join(", ");
+    return `🛰️ ${signal.sourceIp} · ${signal.summary}${
+      location ? ` · ${location}` : ""
+    }`;
+  });
   const message = [
     `🍯 Honey Spire ${title}`,
     `Window: last ${hourly ? "60 minutes" : "24 hours"}`,
@@ -45,12 +61,20 @@ export async function sendTelegramSummary(period: TelegramPeriod) {
     `Accepted honeypot sessions: ${details.successfulLogins}`,
     `Commands captured: ${details.commandTotal}`,
     `Current rate: ${data.currentRate}/min (previous: ${data.previousRate}/min)`,
+    `Recon signals: ${signalCount}`,
     "",
     "🌐 Top source IPs",
     ...rankedLines(data.topIps, "No source IPs"),
     "",
     "👤 Top usernames",
     ...rankedLines(data.topUsernames, "No usernames"),
+    "",
+    "🎯 Top targeted ports",
+    ...(data.topTargetedPorts.length
+      ? data.topTargetedPorts
+          .slice(0, 5)
+          .map((port) => `${port.port} — ${port.count}`)
+      : ["No port probes"]),
     "",
     "🗺️ Top countries",
     ...rankedLines(details.topCountries, "No geolocation data"),
@@ -60,6 +84,9 @@ export async function sendTelegramSummary(period: TelegramPeriod) {
     "",
     "⌨️ Recent commands",
     ...(recentCommands.length ? recentCommands : ["No commands captured"]),
+    "",
+    "🛰️ Recent recon signals",
+    ...(recentSignals.length ? recentSignals : ["No recon signals"]),
   ].join("\n");
 
   const response = await fetch(

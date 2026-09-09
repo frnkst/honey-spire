@@ -8,6 +8,7 @@ import type {
   CommandEvent,
   DashboardData,
   RankedValue,
+  SignalEvent,
   TrendSensor,
 } from "@/lib/types";
 
@@ -46,6 +47,30 @@ function rowToCommand(row: Record<string, unknown>): CommandEvent {
     sourceIp: String(row.source_ip),
     username: String(row.username),
     command: String(row.command),
+  };
+}
+
+function rowToSignal(row: Record<string, unknown>): SignalEvent {
+  const ports = row.ports ? (JSON.parse(String(row.ports)) as number[]) : null;
+  return {
+    id: Number(row.id),
+    occurredAt: Number(row.occurred_at),
+    beeconId: String(row.beecon_id ?? "local"),
+    kind: String(row.kind) as SignalEvent["kind"],
+    sourceIp: String(row.source_ip),
+    sourcePort: row.source_port === null ? null : Number(row.source_port),
+    protocol: row.protocol ? String(row.protocol) : null,
+    scanType: row.scan_type ? String(row.scan_type) : null,
+    ports: ports ?? null,
+    summary: String(row.summary),
+    detail: row.detail ? String(row.detail) : null,
+    countryCode: row.country_code ? String(row.country_code) : null,
+    countryName: row.country_name ? String(row.country_name) : null,
+    city: row.city ? String(row.city) : null,
+    latitude: row.latitude === null ? null : Number(row.latitude),
+    longitude: row.longitude === null ? null : Number(row.longitude),
+    asn: row.asn === null ? null : Number(row.asn),
+    organization: row.organization ? String(row.organization) : null,
   };
 }
 
@@ -126,6 +151,42 @@ export function getDatabase(): Database.Database {
     CREATE TABLE IF NOT EXISTS minute_stats (
       bucket INTEGER PRIMARY KEY,
       attack_count INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS signal_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      occurred_at INTEGER NOT NULL,
+      beecon_id TEXT REFERENCES beecons(id),
+      kind TEXT NOT NULL,
+      source_ip TEXT NOT NULL,
+      source_port INTEGER,
+      protocol TEXT,
+      scan_type TEXT,
+      port INTEGER,
+      ports TEXT,
+      summary TEXT NOT NULL,
+      detail TEXT,
+      country_code TEXT,
+      country_name TEXT,
+      city TEXT,
+      latitude REAL,
+      longitude REAL,
+      asn INTEGER,
+      organization TEXT,
+      UNIQUE (occurred_at, source_ip, source_port, kind, summary)
+    );
+    CREATE INDEX IF NOT EXISTS signal_events_occurred_at_idx
+      ON signal_events(occurred_at);
+    CREATE INDEX IF NOT EXISTS signal_events_source_ip_idx
+      ON signal_events(source_ip, occurred_at);
+    CREATE INDEX IF NOT EXISTS signal_events_kind_idx
+      ON signal_events(kind, occurred_at);
+
+    CREATE TABLE IF NOT EXISTS signal_stats (
+      bucket INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (bucket, kind)
     );
 
     CREATE TABLE IF NOT EXISTS session_fingerprints (
@@ -262,6 +323,42 @@ export function insertCommand(
     id: Number(result.lastInsertRowid),
     username: context?.username ?? "",
   };
+}
+
+export function insertSignal(
+  signal: Omit<SignalEvent, "id">,
+): SignalEvent | null {
+  const db = getDatabase();
+  const insert = db.transaction(() => {
+    const result = db
+      .prepare(
+        `INSERT OR IGNORE INTO signal_events (
+          occurred_at, beecon_id, kind, source_ip, source_port, protocol,
+          scan_type, port, ports, summary, detail, country_code, country_name,
+          city, latitude, longitude, asn, organization
+        ) VALUES (
+          @occurredAt, @beeconId, @kind, @sourceIp, @sourcePort, @protocol,
+          @scanType, @port, @ports, @summary, @detail, @countryCode, @countryName,
+          @city, @latitude, @longitude, @asn, @organization
+        )`,
+      )
+      .run({
+        ...signal,
+        // Single-target events get a scalar port so top-port queries stay SQL.
+        port: signal.ports?.length === 1 ? signal.ports[0] : null,
+        ports: signal.ports ? JSON.stringify(signal.ports) : null,
+      });
+    if (result.changes === 0) return null;
+    const bucket = Math.floor(signal.occurredAt / 60_000) * 60_000;
+    db.prepare(
+      `INSERT INTO signal_stats (bucket, kind, count) VALUES (?, ?, 1)
+       ON CONFLICT(bucket, kind) DO UPDATE SET count = count + 1`,
+    ).run(bucket, signal.kind);
+    return Number(result.lastInsertRowid);
+  });
+
+  const id = insert();
+  return id === null ? null : { ...signal, id };
 }
 
 const rangeMilliseconds: Record<string, number> = {
@@ -437,6 +534,55 @@ export function getDashboardData(
         a.name.localeCompare(b.name),
     );
 
+  const signalStatRows = db
+    .prepare(
+      `SELECT bucket, SUM(count) AS count FROM signal_stats
+       WHERE bucket >= ? GROUP BY bucket`,
+    )
+    .all(since) as { bucket: number; count: number }[];
+  const signalTrendMap = new Map<number, number>();
+  for (const row of signalStatRows) {
+    const bucket = Math.floor(row.bucket / bucketSize) * bucketSize;
+    signalTrendMap.set(bucket, (signalTrendMap.get(bucket) ?? 0) + row.count);
+  }
+  const topScannerRows = db
+    .prepare(
+      `SELECT source_ip AS value, COUNT(*) AS count FROM signal_events
+       WHERE occurred_at >= ?
+       GROUP BY source_ip ORDER BY count DESC, value ASC LIMIT 10`,
+    )
+    .all(since) as { value: string; count: number }[];
+  const portRankRows = db
+    .prepare(
+      `SELECT port, COUNT(*) AS count FROM signal_events
+       WHERE port IS NOT NULL AND occurred_at >= ?
+       GROUP BY port ORDER BY count DESC LIMIT 10`,
+    )
+    .all(since) as { port: number; count: number }[];
+  const signalRows = db
+    .prepare(`SELECT * FROM signal_events ORDER BY occurred_at DESC LIMIT 30`)
+    .all() as Record<string, unknown>[];
+  const httpRows = db
+    .prepare(
+      `SELECT * FROM signal_events WHERE kind = 'http'
+       ORDER BY occurred_at DESC LIMIT 20`,
+    )
+    .all() as Record<string, unknown>[];
+  const mapSignalRows = db
+    .prepare(
+      `SELECT source_ip, latitude, longitude, COUNT(*) AS count
+       FROM signal_events
+       WHERE occurred_at >= ? AND latitude IS NOT NULL AND longitude IS NOT NULL
+       GROUP BY source_ip, latitude, longitude
+       ORDER BY count DESC LIMIT 100`,
+    )
+    .all(since) as {
+    source_ip: string;
+    latitude: number;
+    longitude: number;
+    count: number;
+  }[];
+
   return {
     generatedAt: now,
     range: normalizedRange,
@@ -452,6 +598,53 @@ export function getDashboardData(
     recentCommands: commandRows.map(rowToCommand),
     recentAttacks: recentRows.map(rowToAttack),
     mapAttacks: mapRows.map(rowToAttack),
+    signalTrend: Array.from(signalTrendMap, ([timestamp, count]) => ({
+      timestamp,
+      count,
+    })),
+    topScannerIps: topScannerRows.map((row) => ({
+      value: row.value,
+      count: Number(row.count),
+    })),
+    topTargetedPorts: portRankRows.map((row) => ({
+      port: Number(row.port),
+      count: Number(row.count),
+    })),
+    recentSignals: signalRows.map(rowToSignal),
+    recentHttp: httpRows.map((row) => {
+      let path = "";
+      let userAgent: string | null = null;
+      let method: string | null = null;
+      if (row.detail) {
+        try {
+          const parsed = JSON.parse(String(row.detail)) as {
+            path?: string;
+            userAgent?: string;
+            method?: string;
+            PATH?: string;
+            HEADER?: string;
+          };
+          path = String(parsed.path ?? parsed.PATH ?? "");
+          userAgent = parsed.userAgent ?? parsed.HEADER ?? null;
+          method = parsed.method ?? null;
+        } catch {
+          path = "";
+        }
+      }
+      return {
+        occurredAt: Number(row.occurred_at),
+        sourceIp: String(row.source_ip),
+        sourcePort: row.source_port === null ? null : Number(row.source_port),
+        path: method ? `${method} ${path}`.trim() : path,
+        userAgent,
+      };
+    }),
+    mapSignals: mapSignalRows.map((row) => ({
+      sourceIp: String(row.source_ip),
+      count: Number(row.count),
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+    })),
   };
 }
 
@@ -508,6 +701,8 @@ export function cleanupDatabase(retentionDays: number) {
     db.prepare(`DELETE FROM attacks WHERE occurred_at < ?`).run(cutoff);
     db.prepare(`DELETE FROM command_events WHERE occurred_at < ?`).run(cutoff);
     db.prepare(`DELETE FROM minute_stats WHERE bucket < ?`).run(cutoff);
+    db.prepare(`DELETE FROM signal_events WHERE occurred_at < ?`).run(cutoff);
+    db.prepare(`DELETE FROM signal_stats WHERE bucket < ?`).run(cutoff);
     db.prepare(`DELETE FROM session_fingerprints WHERE updated_at < ?`).run(
       Date.now() - 24 * 60 * 60_000,
     );
