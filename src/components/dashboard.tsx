@@ -32,7 +32,6 @@ import {
   AttackMap,
   AttackTrend,
 } from "@/components/threat-charts";
-import { HoneySpire } from "@/components/spire";
 import { Brand } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -411,39 +410,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       <div className="mx-auto max-w-[1720px] px-4 py-8 sm:px-7 lg:py-12">
         <section className="reveal relative mb-10 border-b border-white/[.08] pb-8 lg:mb-12 lg:pb-10">
           <div className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
-            <div className="max-w-5xl">
+            <div className="max-w-4xl">
               <div className="mb-5 flex items-center gap-3">
                 <span className="h-px w-10 bg-primary" />
                 <p className="data-label text-primary">
                   Live hostile signal observatory
                 </p>
               </div>
-              <div className="flex flex-col gap-8 md:flex-row md:items-end md:gap-10">
-                <h1 className="font-heading text-[clamp(3.5rem,8vw,8rem)] font-semibold uppercase leading-[.76] tracking-[-.045em]">
-                  Threat
-                  <span className="ml-[.16em] text-primary">field</span>
-                </h1>
-                <div className="glass-card relative hidden shrink-0 overflow-hidden rounded-sm border-white/[.07] md:block">
-                  <span className="pointer-events-none absolute left-2 top-2 z-10 size-3 border-l border-t border-primary/50" />
-                  <span className="pointer-events-none absolute right-2 top-2 z-10 size-3 border-r border-t border-primary/50" />
-                  <span className="pointer-events-none absolute bottom-2 left-2 z-10 size-3 border-b border-l border-primary/50" />
-                  <span className="pointer-events-none absolute bottom-2 right-2 z-10 size-3 border-b border-r border-primary/50" />
-                  <span className="data-label absolute left-3 top-3 z-10 whitespace-nowrap text-primary">
-                    STRUCT / SPIRE
-                  </span>
-                  <span className="data-label absolute right-3 top-3 z-10 flex items-center gap-1.5 whitespace-nowrap text-emerald-300">
-                    <span className="size-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.9)]" />
-                    CORE ONLINE
-                  </span>
-                  <HoneySpire className="mx-auto block h-48 w-64" />
-                  <div className="absolute inset-x-3 bottom-3 z-10 flex items-center justify-between whitespace-nowrap">
-                    <span className="data-label">ROT 0.38 RAD/S</span>
-                    <span className="data-label text-secondary">
-                      CELLS 6 × 14
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <h1 className="font-heading text-[clamp(3.5rem,8vw,8rem)] font-semibold uppercase leading-[.76] tracking-[-.045em]">
+                Threat
+                <span className="ml-[.16em] text-primary">field</span>
+              </h1>
               <p className="mt-6 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
                 Port 22 is exposed. Every credential, source fingerprint, and
                 shell instruction is being observed in real time.
