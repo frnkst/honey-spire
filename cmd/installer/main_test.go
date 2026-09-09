@@ -2,6 +2,10 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -152,13 +156,13 @@ func TestTowerInstallLeavesSSHAlone(t *testing.T) {
 }
 
 func TestNormalizeTowerAddress(t *testing.T) {
-	tests := map[string]string{
-		"tower.example.com":       "https://tower.example.com",
-		"tower.example.com/":      "https://tower.example.com",
-		"192.0.2.10":              "https://192.0.2.10",
-		"192.0.2.10:3000":         "https://192.0.2.10:3000",
-		"http://192.0.2.10:3000":  "http://192.0.2.10:3000",
-		"https://tower.io/tower/": "https://tower.io/tower",
+	tests := map[string][]string{
+		"tower.example.com":       {"https://tower.example.com", "http://tower.example.com"},
+		"tower.example.com/":      {"https://tower.example.com", "http://tower.example.com"},
+		"192.0.2.10":              {"https://192.0.2.10", "http://192.0.2.10"},
+		"192.0.2.10:3000":         {"https://192.0.2.10:3000", "http://192.0.2.10:3000"},
+		"http://192.0.2.10:3000":  {"http://192.0.2.10:3000"},
+		"https://tower.io/tower/": {"https://tower.io/tower"},
 	}
 	for input, expected := range tests {
 		actual, err := normalizeTowerAddress(input)
@@ -166,13 +170,80 @@ func TestNormalizeTowerAddress(t *testing.T) {
 			t.Errorf("normalizeTowerAddress(%q) failed: %v", input, err)
 			continue
 		}
-		if actual != expected {
+		if !slices.Equal(actual, expected) {
 			t.Errorf("normalizeTowerAddress(%q) = %q, want %q", input, actual, expected)
 		}
 	}
 	for _, broken := range []string{"", "https://user:pass@tower.example.com", "https://tower.example.com/?x=1", "ftp://tower.example.com"} {
 		if _, err := normalizeTowerAddress(broken); err == nil {
 			t.Errorf("normalizeTowerAddress(%q) should have failed", broken)
+		}
+	}
+}
+
+func TestProbeTowerFallsBackToHTTP(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer server.Close()
+
+	// The https candidate is unreachable, mirroring a tower installed on a
+	// bare IP without TLS; the http candidate must win.
+	message := probeTower([]string{"https://127.0.0.1:1", server.URL})().(towerProbeMsg)
+	if !message.ok {
+		t.Fatalf("expected the http candidate to answer: %s", message.detail)
+	}
+	if message.url != server.URL {
+		t.Fatalf("expected the http candidate URL, got %q", message.url)
+	}
+	if !message.insecure {
+		t.Fatal("an http tower must be flagged insecure")
+	}
+}
+
+func TestProbeTowerReportsEveryCandidate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	message := probeTower([]string{"https://127.0.0.1:1", server.URL})().(towerProbeMsg)
+	if message.ok {
+		t.Fatal("expected the probe to fail when no candidate is a tower")
+	}
+	for _, address := range []string{"https://127.0.0.1:1", server.URL} {
+		if !strings.Contains(message.detail, address) {
+			t.Fatalf("probe detail %q does not mention %q", message.detail, address)
+		}
+	}
+}
+
+func TestInsecureTowerProbeWarnsBeforeInstall(t *testing.T) {
+	m, err := newModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.topologyCursor = 2
+	beecon, _ := m.updateTopology(tea.KeyMsg{Type: tea.KeyEnter})
+	m = beecon.(model)
+	m.fields[0].input.SetValue("192.0.2.10")
+	m.screen = screenProbing
+
+	updated, _ := m.Update(towerProbeMsg{ok: true, url: "http://192.0.2.10", insecure: true})
+	m = updated.(model)
+	if m.config.towerURL != "http://192.0.2.10" {
+		t.Fatalf("expected the insecure tower URL to be kept, got %q", m.config.towerURL)
+	}
+	if m.warnText == "" {
+		t.Fatal("an insecure tower must warn the operator before the install starts")
+	}
+	m.width = 80
+	if lines := strings.Split(m.View(), "\n"); len(m.warnText) > 0 {
+		for _, line := range lines {
+			if width := lipgloss.Width(line); width > m.width {
+				t.Fatalf("warning rendered %d columns wide in an 80-column terminal", width)
+			}
 		}
 	}
 }

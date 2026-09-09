@@ -91,7 +91,8 @@ Choose **BEECON**. The installer asks for:
 
 1. **Tower address** — the tower's domain or IP (for example
    `tower.example.com`). The installer contacts the tower to verify it is
-   reachable before continuing.
+   reachable before continuing. Domains are reached over HTTPS; a tower
+   installed without a domain is reached over plain HTTP.
 2. **Display name** — the name shown on the tower's dashboard and in the join
    request.
 

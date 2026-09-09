@@ -114,6 +114,7 @@ type model struct {
 	quickConfig    installConfig
 	probeDetail    string
 	errText        string
+	warnText       string
 	installStep    string
 	activity       []string
 	installEvents  chan tea.Msg
@@ -135,6 +136,7 @@ var (
 	subtle    = lipgloss.NewStyle().Foreground(muted)
 	help      = lipgloss.NewStyle().Foreground(muted)
 	errorText = lipgloss.NewStyle().Foreground(danger)
+	warnText  = lipgloss.NewStyle().Foreground(gold)
 )
 
 func main() {
@@ -217,7 +219,7 @@ func beeconFields() []formField {
 		hostname = ""
 	}
 	return []formField{
-		newField("tower_address", "Tower address", "Domain or IP of the tower dashboard, for example https://tower.example.com.", "tower.example.com", false, ""),
+		newField("tower_address", "Tower address", "Domain or IP of the tower dashboard, for example tower.example.com. Domains are reached over HTTPS; a bare IP falls back to HTTP when the tower has no TLS.", "tower.example.com", false, ""),
 		newField("beecon_name", "Display name", "Shown on the tower dashboard and in the join request. Spaces are allowed.", "edge-server-01", false, hostname),
 	}
 }
@@ -283,6 +285,9 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.fieldIndex++
 		m.fields[m.fieldIndex].input.Focus()
 		m.screen = screenField
+		if msg.insecure {
+			m.warnText = "The tower answered over plain HTTP, so the beecon token and captured events travel unencrypted. Continue, or esc to enter an https:// address."
+		}
 		return m, textinput.Blink
 	case progressMsg:
 		if msg.step != "" {
@@ -341,6 +346,7 @@ func (m model) updateTopology(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.topologyCursor = min(2, m.topologyCursor+1)
 	case "enter":
 		m.errText = ""
+		m.warnText = ""
 		m.config.topology = topologyByIndex(m.topologyCursor)
 		if m.config.topology == topologyBeecon {
 			m.quickConfig.topology = topologyBeecon
@@ -364,6 +370,7 @@ func (m model) updateMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.modeCursor = min(1, m.modeCursor+1)
 	case "enter":
 		m.errText = ""
+		m.warnText = ""
 		if m.modeCursor == 0 {
 			m.quickConfig.topology = m.config.topology
 			m.config = m.quickConfig
@@ -395,6 +402,7 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fields[m.fieldIndex].input.Focus()
 		}
 		m.errText = ""
+		m.warnText = ""
 		return m, textinput.Blink
 	case "enter":
 		value := strings.TrimSpace(m.fields[m.fieldIndex].input.Value())
@@ -405,15 +413,17 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 
 		if m.config.topology == topologyBeecon && m.fields[m.fieldIndex].key == "tower_address" {
-			normalized, err := normalizeTowerAddress(value)
+			candidates, err := normalizeTowerAddress(value)
 			if err != nil {
 				m.errText = err.Error()
 				return m, nil
 			}
 			m.fields[m.fieldIndex].input.Blur()
 			m.probeDetail = ""
+			m.errText = ""
+			m.warnText = ""
 			m.screen = screenProbing
-			return m, tea.Batch(m.spinner.Tick, probeTower(normalized))
+			return m, tea.Batch(m.spinner.Tick, probeTower(candidates))
 		}
 		m.fields[m.fieldIndex].input.Blur()
 
@@ -569,52 +579,65 @@ func validDomain(value string) bool {
 }
 
 type towerProbeMsg struct {
-	ok     bool
-	url    string
-	detail string
+	ok       bool
+	url      string
+	insecure bool
+	detail   string
 }
 
 // normalizeTowerAddress accepts a bare host ("tower.example.com",
-// "192.0.2.10:3000") or an explicit http(s) URL and returns a normalized
-// base URL with no trailing slash. Bare hosts default to https.
-func normalizeTowerAddress(value string) (string, error) {
+// "192.0.2.10:3000") or an explicit http(s) URL and returns the probe
+// candidates in the order they should be tried. Explicit schemes are taken
+// literally; bare hosts try https first and then http, because a tower
+// installed without a domain serves plain HTTP.
+func normalizeTowerAddress(value string) ([]string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return "", fmt.Errorf("enter the tower's domain or IP address")
+		return nil, fmt.Errorf("enter the tower's domain or IP address")
 	}
+	inputs := []string{value}
 	if !strings.Contains(value, "://") {
-		value = "https://" + value
+		inputs = []string{"https://" + value, "http://" + value}
 	}
-	parsed, err := url.Parse(value)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return "", fmt.Errorf("enter a valid tower address, for example tower.example.com")
+	candidates := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		parsed, err := url.Parse(input)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return nil, fmt.Errorf("enter a valid tower address, for example tower.example.com")
+		}
+		if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("enter the tower address without credentials, query, or fragment")
+		}
+		candidates = append(candidates, strings.TrimRight(parsed.Scheme+"://"+parsed.Host+parsed.Path, "/"))
 	}
-	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("enter the tower address without credentials, query, or fragment")
-	}
-	return strings.TrimRight(parsed.Scheme+"://"+parsed.Host+parsed.Path, "/"), nil
+	return candidates, nil
 }
 
 // probeTower verifies the tower is reachable and is actually Honey Spire
-// before the installer commits the beecon configuration.
-func probeTower(address string) tea.Cmd {
+// before the installer commits the beecon configuration. Candidates are
+// tried in order; the first address answering like a tower wins.
+func probeTower(candidates []string) tea.Cmd {
 	return func() tea.Msg {
 		client := &http.Client{Timeout: 10 * time.Second}
-		response, err := client.Get(address + "/api/health")
-		if err != nil {
-			return towerProbeMsg{ok: false, url: address, detail: fmt.Sprintf("could not reach the tower: %v", err)}
+		details := make([]string, 0, len(candidates))
+		for _, address := range candidates {
+			response, err := client.Get(address + "/api/health")
+			if err != nil {
+				details = append(details, fmt.Sprintf("%s (%v)", address, err))
+				continue
+			}
+			var body struct {
+				Status string `json:"status"`
+			}
+			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body)
+			response.Body.Close()
+			if response.StatusCode != http.StatusOK || decodeErr != nil || body.Status != "ok" {
+				details = append(details, fmt.Sprintf("%s (not a Honey Spire tower)", address))
+				continue
+			}
+			return towerProbeMsg{ok: true, url: address, insecure: strings.HasPrefix(address, "http://")}
 		}
-		defer response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			return towerProbeMsg{ok: false, url: address, detail: fmt.Sprintf("the tower answered with HTTP %d", response.StatusCode)}
-		}
-		var body struct {
-			Status string `json:"status"`
-		}
-		if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body); err != nil || body.Status != "ok" {
-			return towerProbeMsg{ok: false, url: address, detail: "that address is not responding like a Honey Spire tower"}
-		}
-		return towerProbeMsg{ok: true, url: address}
+		return towerProbeMsg{ok: false, detail: "could not reach the tower: " + strings.Join(details, "; ")}
 	}
 }
 
@@ -931,6 +954,9 @@ func (m model) fieldView(width int) string {
 	}
 	if m.errText != "" {
 		parts = append(parts, "", errorText.Render("! "+m.errText))
+	}
+	if m.warnText != "" {
+		parts = append(parts, "", warnText.Width(width-4).Render("! "+m.warnText))
 	}
 	parts = append(parts, "", help.Render("enter continue  -  esc back  -  ctrl+c exit"))
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
