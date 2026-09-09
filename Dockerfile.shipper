@@ -11,7 +11,11 @@ FROM alpine:3.22
 # uid 999 matches the cowrie container's user on the shared cowrie-data
 # volume; the pre-created chowned state dir makes the fresh named volume
 # writable (named-volume initialization copies image ownership).
-RUN adduser -D -u 999 -g "" shipper \
+# The account's primary group takes the first free gid instead of 999,
+# which alpine 3.22's base layout already reserves for the "ping" group;
+# the numeric chown and USER below are what the runtime relies on.
+RUN addgroup -S shipper \
+    && adduser -S -D -u 999 -G shipper shipper \
     && mkdir -p /data/shipper \
     && chown 999:999 /data/shipper
 COPY --from=build /shipper /usr/local/bin/shipper
