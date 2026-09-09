@@ -35,14 +35,71 @@ function useChart(option: EChartsOption, dependencies: unknown[]) {
   return element;
 }
 
+const SENSOR_PALETTE = [
+  "#FFC247",
+  "#62C8DC",
+  "#A78BFA",
+  "#4ADE80",
+  "#FB7185",
+  "#60A5FA",
+];
+
 export function AttackTrend({ data }: { data: DashboardData }) {
+  const bucketSize =
+    data.trend.length > 1
+      ? data.trend[1].timestamp - data.trend[0].timestamp
+      : 60_000;
+  // The newest bucket is usually still filling up — flag it in tooltip/styles.
+  const lastBucket = data.trend.at(-1);
+  const partialIndex =
+    lastBucket && lastBucket.timestamp + bucketSize > data.generatedAt
+      ? data.trend.length - 1
+      : -1;
+  // Totals per bucket across the plotted sensors — the same source as the
+  // bars, so markers and shares always line up with what is rendered.
+  const bucketTotals = data.trend.map((_, index) =>
+    data.trendSensors.reduce(
+      (sum, sensor) => sum + (sensor.counts[index] ?? 0),
+      0,
+    ),
+  );
+  const grandTotal = bucketTotals.reduce((sum, count) => sum + count, 0);
+  const average =
+    data.trend.length > 0
+      ? Math.round((grandTotal / data.trend.length) * 10) / 10
+      : 0;
+  const peakIndex = bucketTotals.indexOf(Math.max(...bucketTotals, 0));
+
   const ref = useChart(
     {
       animationDuration: 900,
       animationEasing: "cubicOut",
-      grid: { left: 46, right: 18, top: 28, bottom: 34 },
+      grid: {
+        left: 46,
+        right: 18,
+        top: data.trendSensors.length > 1 ? 38 : 24,
+        bottom: 34,
+      },
+      legend: {
+        show: data.trendSensors.length > 1,
+        top: 4,
+        right: 8,
+        icon: "roundRect",
+        itemWidth: 10,
+        itemHeight: 5,
+        itemGap: 14,
+        textStyle: {
+          color: "#8e9087",
+          fontFamily: "IBM Plex Mono",
+          fontSize: 9,
+        },
+      },
       tooltip: {
         trigger: "axis",
+        axisPointer: {
+          type: "shadow",
+          shadowStyle: { color: "rgba(241,238,228,.05)" },
+        },
         backgroundColor: "rgba(12,13,11,.96)",
         borderColor: "rgba(255,194,71,.35)",
         borderWidth: 1,
@@ -52,14 +109,61 @@ export function AttackTrend({ data }: { data: DashboardData }) {
           fontFamily: "IBM Plex Mono",
           fontSize: 11,
         },
-        axisPointer: {
-          type: "line",
-          lineStyle: { color: "rgba(98,200,220,.35)", type: "dashed" },
+        formatter: (raw: unknown) => {
+          const list = (Array.isArray(raw) ? raw : [raw]) as {
+            dataIndex: number;
+            marker: string;
+            seriesName: string;
+            value: number;
+          }[];
+          const index = list[0]?.dataIndex ?? 0;
+          const point = data.trend[index];
+          if (!point) return "";
+          const bucketTotal = list.reduce(
+            (sum, item) => sum + Number(item.value ?? 0),
+            0,
+          );
+          const start = new Date(point.timestamp).toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const end = new Date(point.timestamp + bucketSize).toLocaleString(
+            [],
+            { hour: "2-digit", minute: "2-digit" },
+          );
+          const rows = list
+            .filter((item) => Number(item.value ?? 0) > 0)
+            .map((item) => {
+              const share = bucketTotal
+                ? Math.round((Number(item.value) / bucketTotal) * 100)
+                : 0;
+              return `<div style="display:flex;gap:14px;justify-content:space-between;margin-top:4px;">
+                <span>${item.marker}${item.seriesName}</span>
+                <span style="color:#F1EEE4;">${item.value} · ${share}%</span>
+              </div>`;
+            })
+            .join("");
+          const windowShare = grandTotal
+            ? Math.round((bucketTotal / grandTotal) * 100)
+            : 0;
+          return `<div style="min-width:200px;">
+            <div style="color:#73766e;font-size:9px;letter-spacing:.08em;">
+              ${start} – ${end}${index === partialIndex ? " · IN PROGRESS" : ""}
+            </div>
+            ${rows}
+            <div style="display:flex;gap:14px;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,194,71,.25);">
+              <span>TOTAL</span><span style="color:#FFC247;">${bucketTotal}</span>
+            </div>
+            <div style="color:#73766e;font-size:9px;margin-top:4px;">
+              ${windowShare}% of window volume
+            </div>
+          </div>`;
         },
       },
       xAxis: {
         type: "category",
-        boundaryGap: false,
         data: data.trend.map((point) =>
           new Date(point.timestamp).toLocaleString([], {
             month: "short",
@@ -90,18 +194,17 @@ export function AttackTrend({ data }: { data: DashboardData }) {
           fontSize: 9,
         },
       },
-      series: [
-        {
-          type: "line",
-          smooth: 0.38,
-          symbol: "none",
-          lineStyle: {
-            color: "#FFC247",
-            width: 2,
-            shadowBlur: 14,
-            shadowColor: "rgba(255,194,71,.3)",
-          },
-          areaStyle: {
+      series: data.trendSensors.map((sensor, seriesIndex) => {
+        const color = SENSOR_PALETTE[seriesIndex % SENSOR_PALETTE.length];
+        const isTopSeries = seriesIndex === data.trendSensors.length - 1;
+        const series: Record<string, unknown> = {
+          name: sensor.name,
+          type: "bar",
+          stack: "attacks",
+          barMaxWidth: 24,
+          barCategoryGap: "25%",
+          emphasis: { focus: "series" },
+          itemStyle: {
             color: {
               type: "linear",
               x: 0,
@@ -109,17 +212,66 @@ export function AttackTrend({ data }: { data: DashboardData }) {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(255,194,71,.26)" },
-                { offset: 0.65, color: "rgba(255,194,71,.04)" },
-                { offset: 1, color: "rgba(255,194,71,0)" },
+                { offset: 0, color },
+                { offset: 1, color: `${color}55` },
               ],
             },
+            borderRadius: isTopSeries ? [2, 2, 0, 0] : 0,
           },
-          data: data.trend.map((point) => point.count),
-        },
-      ],
+          data: sensor.counts.map((count, index) => ({
+            value: count,
+            itemStyle:
+              index === partialIndex && count > 0
+                ? { opacity: 0.45 }
+                : undefined,
+          })),
+        };
+        if (seriesIndex === 0) {
+          series.markLine = {
+            silent: true,
+            symbol: "none",
+            animation: false,
+            lineStyle: {
+              color: "rgba(98,200,220,.55)",
+              type: "dashed",
+              width: 1,
+            },
+            label: {
+              formatter: `AVG ${average}`,
+              position: "insideEndTop",
+              color: "#62C8DC",
+              fontFamily: "IBM Plex Mono",
+              fontSize: 9,
+            },
+            data: [{ yAxis: average }],
+          };
+          series.markPoint = {
+            silent: true,
+            symbol: "diamond",
+            symbolSize: 9,
+            itemStyle: {
+              color: "#FFC247",
+              borderColor: "rgba(8,9,7,.9)",
+              borderWidth: 1,
+            },
+            label: {
+              formatter: `PEAK ${bucketTotals[peakIndex] ?? 0}`,
+              position: "top",
+              distance: 6,
+              color: "#FFC247",
+              fontFamily: "IBM Plex Mono",
+              fontSize: 9,
+            },
+            data:
+              peakIndex >= 0 && (bucketTotals[peakIndex] ?? 0) > 0
+                ? [{ coord: [peakIndex, bucketTotals[peakIndex]] }]
+                : [],
+          };
+        }
+        return series;
+      }),
     },
-    [data.trend],
+    [data.trend, data.trendSensors],
   );
 
   return <div className="h-80 w-full" ref={ref} />;

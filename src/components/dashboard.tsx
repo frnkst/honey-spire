@@ -411,61 +411,61 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       <div className="mx-auto max-w-[1720px] px-4 py-8 sm:px-7 lg:py-12">
         <section className="reveal relative mb-10 border-b border-white/[.08] pb-8 lg:mb-12 lg:pb-10">
           <div className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end">
-            <div className="max-w-4xl">
+            <div className="max-w-5xl">
               <div className="mb-5 flex items-center gap-3">
                 <span className="h-px w-10 bg-primary" />
                 <p className="data-label text-primary">
                   Live hostile signal observatory
                 </p>
               </div>
-              <h1 className="font-heading text-[clamp(3.5rem,8vw,8rem)] font-semibold uppercase leading-[.76] tracking-[-.045em]">
-                Threat
-                <span className="ml-[.16em] text-primary">field</span>
-              </h1>
+              <div className="flex flex-col gap-8 md:flex-row md:items-end md:gap-10">
+                <h1 className="font-heading text-[clamp(3.5rem,8vw,8rem)] font-semibold uppercase leading-[.76] tracking-[-.045em]">
+                  Threat
+                  <span className="ml-[.16em] text-primary">field</span>
+                </h1>
+                <div className="glass-card relative hidden shrink-0 overflow-hidden rounded-sm border-white/[.07] md:block">
+                  <span className="pointer-events-none absolute left-2 top-2 z-10 size-3 border-l border-t border-primary/50" />
+                  <span className="pointer-events-none absolute right-2 top-2 z-10 size-3 border-r border-t border-primary/50" />
+                  <span className="pointer-events-none absolute bottom-2 left-2 z-10 size-3 border-b border-l border-primary/50" />
+                  <span className="pointer-events-none absolute bottom-2 right-2 z-10 size-3 border-b border-r border-primary/50" />
+                  <span className="data-label absolute left-3 top-3 z-10 whitespace-nowrap text-primary">
+                    STRUCT / SPIRE
+                  </span>
+                  <span className="data-label absolute right-3 top-3 z-10 flex items-center gap-1.5 whitespace-nowrap text-emerald-300">
+                    <span className="size-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.9)]" />
+                    CORE ONLINE
+                  </span>
+                  <HoneySpire className="mx-auto block h-48 w-64" />
+                  <div className="absolute inset-x-3 bottom-3 z-10 flex items-center justify-between whitespace-nowrap">
+                    <span className="data-label">ROT 0.38 RAD/S</span>
+                    <span className="data-label text-secondary">
+                      CELLS 6 × 14
+                    </span>
+                  </div>
+                </div>
+              </div>
               <p className="mt-6 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
                 Port 22 is exposed. Every credential, source fingerprint, and
                 shell instruction is being observed in real time.
               </p>
             </div>
-            <div className="flex flex-col items-start gap-7 lg:items-end">
-              <div className="glass-card relative hidden overflow-hidden rounded-sm border-white/[.07] md:block">
-                <span className="pointer-events-none absolute left-2 top-2 z-10 size-3 border-l border-t border-primary/50" />
-                <span className="pointer-events-none absolute right-2 top-2 z-10 size-3 border-r border-t border-primary/50" />
-                <span className="pointer-events-none absolute bottom-2 left-2 z-10 size-3 border-b border-l border-primary/50" />
-                <span className="pointer-events-none absolute bottom-2 right-2 z-10 size-3 border-b border-r border-primary/50" />
-                <span className="data-label absolute left-3 top-3 z-10 whitespace-nowrap text-primary">
-                  STRUCT / SPIRE
-                </span>
-                <span className="data-label absolute right-3 top-3 z-10 flex items-center gap-1.5 whitespace-nowrap text-emerald-300">
-                  <span className="size-1.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.9)]" />
-                  CORE ONLINE
-                </span>
-                <HoneySpire className="mx-auto block h-56 w-64" />
-                <div className="absolute inset-x-3 bottom-3 z-10 flex items-center justify-between whitespace-nowrap">
-                  <span className="data-label">ROT 0.38 RAD/S</span>
-                  <span className="data-label text-secondary">
-                    CELLS 6 × 14
-                  </span>
-                </div>
-              </div>
-              <div>
-                <p className="data-label mb-2 text-right">Observation window</p>
-                <div className="flex rounded-sm border border-white/[.08] bg-black/25 p-1">
-                  {ranges.map((item) => (
-                    <Button
-                      className="h-8 flex-1 rounded-[2px] px-4 font-mono text-[10px] uppercase tracking-[.12em] sm:flex-none"
-                      key={item}
-                      onClick={() => {
-                        setRange(item);
-                        void refresh(item);
-                      }}
-                      size="sm"
-                      variant={range === item ? "default" : "ghost"}
-                    >
-                      {item}
-                    </Button>
-                  ))}
-                </div>
+            <div>
+              <p className="data-label mb-2 text-right">Observation window</p>
+              <div className="flex rounded-sm border border-white/[.08] bg-black/25 p-1">
+                {ranges.map((item) => (
+                  <Button
+                    className="h-8 flex-1 rounded-[2px] px-4 font-mono text-[10px] uppercase tracking-[.12em] sm:flex-none"
+                    key={item}
+                    onClick={() => {
+                      setRange(item);
+                      void refresh(item);
+                    }}
+                    size="sm"
+                    variant={range === item ? "default" : "ghost"}
+                  >
+                    {item}
+                  </Button>
+                ))}
               </div>
             </div>
           </div>
@@ -478,60 +478,13 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           pending={pendingBeecons}
         />
 
-        <section className="reveal reveal-delay-1 mb-12 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            index="01 / RATE"
-            detail={`${delta >= 0 ? "+" : ""}${delta} vs previous minute`}
-            icon={Activity}
-            label="Current attack rate"
-            value={`${data.currentRate}/m`}
-          />
-          <MetricCard
-            index="02 / VOLUME"
-            detail={`During the selected ${range} window`}
-            icon={ShieldAlert}
-            label="Observed attacks"
-            value={data.totalAttacks.toLocaleString()}
-          />
-          <MetricCard
-            accent="cyan"
-            index="03 / ORIGIN"
-            detail="Distinct sources in top rankings"
-            icon={Globe2}
-            label="Tracked sources"
-            value={data.topIps.length}
-          />
-          <MetricCard
-            accent="cyan"
-            index="04 / UPLINK"
-            detail={uplinkDetail}
-            icon={Radio}
-            label="Telemetry status"
-            value={uplinkValue}
-          />
-        </section>
-
-        <section className="reveal reveal-delay-2 mb-12">
+        <section className="reveal reveal-delay-1 mb-12">
           <SectionHeading
             detail="Temporal density / live pressure"
             index="A / SIGNAL"
             title="Attack telemetry"
           />
-          <div className="grid gap-3 xl:grid-cols-[1.7fr_.8fr]">
-            <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
-              <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
-                <div>
-                  <span className="data-label">Historical ingress</span>
-                  <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
-                    Attack volume
-                  </CardTitle>
-                </div>
-                <Activity className="size-4 text-primary" />
-              </CardHeader>
-              <CardContent className="px-2 pb-2 sm:px-4">
-                <AttackTrend data={data} />
-              </CardContent>
-            </Card>
+          <div className="grid gap-3 xl:grid-cols-[.8fr_1.7fr]">
             <Card className="glass-card instrument-card cyan-instrument min-w-0 border-white/[.07]">
               <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
                 <div>
@@ -572,7 +525,54 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 </div>
               </CardContent>
             </Card>
+            <Card className="glass-card instrument-card min-w-0 border-white/[.07]">
+              <CardHeader className="grid-cols-[1fr_auto] items-center border-b border-white/[.06] pb-4">
+                <div>
+                  <span className="data-label">Historical ingress</span>
+                  <CardTitle className="mt-1 font-heading text-xl uppercase tracking-wide">
+                    Attack volume
+                  </CardTitle>
+                </div>
+                <Activity className="size-4 text-primary" />
+              </CardHeader>
+              <CardContent className="px-2 pb-2 sm:px-4">
+                <AttackTrend data={data} />
+              </CardContent>
+            </Card>
           </div>
+        </section>
+
+        <section className="reveal reveal-delay-2 mb-12 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            index="01 / RATE"
+            detail={`${delta >= 0 ? "+" : ""}${delta} vs previous minute`}
+            icon={Activity}
+            label="Current attack rate"
+            value={`${data.currentRate}/m`}
+          />
+          <MetricCard
+            index="02 / VOLUME"
+            detail={`During the selected ${range} window`}
+            icon={ShieldAlert}
+            label="Observed attacks"
+            value={data.totalAttacks.toLocaleString()}
+          />
+          <MetricCard
+            accent="cyan"
+            index="03 / ORIGIN"
+            detail="Distinct sources in top rankings"
+            icon={Globe2}
+            label="Tracked sources"
+            value={data.topIps.length}
+          />
+          <MetricCard
+            accent="cyan"
+            index="04 / UPLINK"
+            detail={uplinkDetail}
+            icon={Radio}
+            label="Telemetry status"
+            value={uplinkValue}
+          />
         </section>
 
         <section className="reveal reveal-delay-2 mb-12">

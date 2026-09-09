@@ -69,6 +69,13 @@ export interface TrendPoint {
   count: number;
 }
 
+/** Per-sensor attack counts aligned with the trend bucket grid. */
+export interface TrendSensor {
+  id: string;
+  name: string;
+  counts: number[];
+}
+
 /** A tower/beecon plotted on the attack origin map. */
 export interface MapSensor {
   id: string;
@@ -89,6 +96,7 @@ export interface DashboardData {
   totalAttacks: number;
   gaugeMaximum: number;
   trend: TrendPoint[];
+  trendSensors: TrendSensor[];
   topIps: RankedValue[];
   topUsernames: RankedValue[];
   topPasswords: RankedValue[];

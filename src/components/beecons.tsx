@@ -20,6 +20,13 @@ export function beeconLabel(beecon: BeeconSummary) {
   return beecon.id === "local" ? "This server (built-in)" : beecon.name;
 }
 
+/** Build refs injected into the shipper image — noise rather than a release version. */
+const GENERIC_VERSIONS = new Set(["main", "master", "dev"]);
+
+function isRealVersion(version: string | null) {
+  return version !== null && !GENERIC_VERSIONS.has(version);
+}
+
 /** When the beecon joined the tower: on approval, or creation for built-in. */
 export function joinedAt(beecon: BeeconSummary) {
   return beecon.approvedAt ?? beecon.createdAt;
@@ -248,7 +255,7 @@ export function BeeconTable({
                   <TableRow key={beecon.id} className="border-white/[.05]">
                     <TableCell className="pl-6">
                       <span className="text-sm">{beeconLabel(beecon)}</span>
-                      {beecon.version ? (
+                      {isRealVersion(beecon.version) ? (
                         <span className="ml-2 font-mono text-[10px] text-muted-foreground">
                           v{beecon.version}
                         </span>

@@ -8,6 +8,7 @@ import type {
   CommandEvent,
   DashboardData,
   RankedValue,
+  TrendSensor,
 } from "@/lib/types";
 
 let database: Database.Database | undefined;
@@ -238,9 +239,7 @@ export function getSessionContext(sessionId: string) {
        ORDER BY occurred_at DESC
        LIMIT 1`,
     )
-    .get(sessionId) as
-    | { sourceIp: string; username: string }
-    | undefined;
+    .get(sessionId) as { sourceIp: string; username: string } | undefined;
 }
 
 export function insertCommand(
@@ -352,7 +351,10 @@ export function getDashboardData(
        WHERE occurred_at >= ? AND latitude IS NOT NULL AND longitude IS NOT NULL${beeconId ? " AND beecon_id = ?" : ""}
        ORDER BY occurred_at DESC LIMIT 200`,
     )
-    .all(...(beeconId ? [since, beeconId] : [since])) as Record<string, unknown>[];
+    .all(...(beeconId ? [since, beeconId] : [since])) as Record<
+    string,
+    unknown
+  >[];
   const total = db
     .prepare(
       `SELECT COUNT(*) AS count FROM attacks
@@ -368,6 +370,73 @@ export function getDashboardData(
   const countFor = (bucket: number) =>
     minuteRows.find((row) => row.bucket === bucket)?.attack_count ?? 0;
 
+  const trend = Array.from(trendMap, ([timestamp, count]) => ({
+    timestamp,
+    count,
+  }));
+
+  // Per-sensor breakdown over the same bucket grid, for stacked bars.
+  const sensorRows = db
+    .prepare(
+      `SELECT COALESCE(beecon_id, 'other') AS id,
+                occurred_at - (occurred_at % @bucketSize) AS bucket,
+                COUNT(*) AS count
+         FROM attacks
+         WHERE occurred_at >= @since AND occurred_at < @now
+               ${beeconId ? "AND beecon_id = @beeconId" : ""}
+         GROUP BY id, bucket`,
+    )
+    .all({
+      bucketSize,
+      since,
+      now,
+      ...(beeconId ? { beeconId } : {}),
+    }) as {
+    id: string;
+    bucket: number;
+    count: number;
+  }[];
+  const bucketIndex = new Map(
+    trend.map((point, index) => [point.timestamp, index]),
+  );
+  const beeconNames = new Map(
+    (
+      db
+        .prepare(`SELECT id, name FROM beecons ORDER BY created_at ASC, id ASC`)
+        .all() as { id: string; name: string }[]
+    ).map((row) => [row.id, row.name]),
+  );
+  const sensorCounts = new Map<string, number[]>();
+  for (const row of sensorRows) {
+    const index = bucketIndex.get(Number(row.bucket));
+    if (index === undefined) continue;
+    let counts = sensorCounts.get(row.id);
+    if (!counts) {
+      counts = Array.from({ length: trend.length }, () => 0);
+      sensorCounts.set(row.id, counts);
+    }
+    counts[index] += Number(row.count);
+  }
+  const sensorOrder = [
+    "local",
+    ...[...beeconNames.keys()].filter((id) => id !== "local"),
+    "other",
+  ];
+  const trendSensors: TrendSensor[] = [...sensorCounts.entries()]
+    .map(([id, counts]) => ({
+      id,
+      name:
+        id === "local"
+          ? "Tower"
+          : (beeconNames.get(id) ?? (id === "other" ? "Unknown" : id)),
+      counts,
+    }))
+    .sort(
+      (a, b) =>
+        sensorOrder.indexOf(a.id) - sensorOrder.indexOf(b.id) ||
+        a.name.localeCompare(b.name),
+    );
+
   return {
     generatedAt: now,
     range: normalizedRange,
@@ -375,7 +444,8 @@ export function getDashboardData(
     previousRate: countFor(currentMinute - 60_000),
     totalAttacks: Number(total.count),
     gaugeMaximum: Math.max(10, Number(peak.count)),
-    trend: Array.from(trendMap, ([timestamp, count]) => ({ timestamp, count })),
+    trend,
+    trendSensors,
     topIps: topValues("source_ip", since, beeconId),
     topUsernames: topValues("username", since, beeconId),
     topPasswords: topValues("password", since, beeconId),
@@ -389,9 +459,7 @@ export function rangeToMilliseconds(range: string): number {
   return rangeMilliseconds[range] ?? 0;
 }
 
-export function getBeeconSummaries(
-  since = 0,
-): Omit<BeeconSummary, "online">[] {
+export function getBeeconSummaries(since = 0): Omit<BeeconSummary, "online">[] {
   return (
     getDatabase()
       .prepare(
