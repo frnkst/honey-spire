@@ -51,6 +51,26 @@ func TestLoadConfigValidatesInput(t *testing.T) {
 			t.Fatal("expected an error for a non-http URL")
 		}
 	})
+
+	// Sidecars write recon events to a shared volume instead of shipping to
+	// the hive, so the hive variables stay unset by design; requiring them
+	// crash-loops the recon sidecar on every full and hive install.
+	t.Run("accepts a sidecar without hive variables", func(t *testing.T) {
+		t.Setenv("SENSOR_ROLE", "sidecar")
+		t.Setenv("HIVE_URL", "")
+		t.Setenv("SENSOR_TOKEN", "")
+		t.Setenv("SENSOR_NAME", "")
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig: %v", err)
+		}
+		if !cfg.sidecar {
+			t.Fatal("sidecar role not detected")
+		}
+		if cfg.hiveURL != "" || cfg.token != "" {
+			t.Fatalf("unexpected hive credentials on a sidecar: %+v", cfg)
+		}
+	})
 }
 
 func TestRunHealthcheck(t *testing.T) {

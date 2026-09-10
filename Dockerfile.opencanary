@@ -10,7 +10,12 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && setcap cap_net_bind_service=+ep "$(readlink -f "$(command -v python3)")"
 
-RUN useradd --system --uid 900 --home-dir /data --create-home opencanary
+# The dashboard (uid 999) and the sensor shipper tail the JSON log from this
+# image's named volume read-only; named-volume initialization copies the
+# image directory's ownership AND mode, so /data must stay world-readable —
+# useradd's --create-home would otherwise create it 0700 (Debian HOME_MODE).
+RUN useradd --system --uid 900 --home-dir /data --create-home opencanary \
+    && chmod 0755 /data
 USER 900
 WORKDIR /data
 

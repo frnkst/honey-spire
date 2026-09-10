@@ -319,11 +319,26 @@ else
   SESSION_SECRET="$(openssl rand -hex 32)"
 fi
 
+# Older images created Opencanary's data volume root 0700 (useradd's Debian
+# home mode), which locked the dashboard's read-only mount out of the JSON
+# log. Fresh volumes inherit the fixed image's 0755; pre-existing ones need a
+# one-time repair. Only repair volumes that already exist — creating the
+# volume here would defeat the image's copy-up initialization and leave it
+# root-owned instead.
+repair_opencanary_volume() {
+  local volume="neonhive_opencanary-data"
+  docker volume inspect "$volume" >/dev/null 2>&1 || return 0
+  docker run --rm --user 0 --cap-add DAC_OVERRIDE \
+    -v "${volume}:/data" \
+    --entrypoint chmod "$OPENCANARY_IMAGE" 0755 /data
+}
+
 OPENCANARY_IMAGE="${OPENCANARY_IMAGE:-ghcr.io/frnkst/neonhive-opencanary:${DEFAULT_IMAGE_TAG}}"
 OPENCANARY_IMAGE="${OPENCANARY_IMAGE,,}"
 if [[ "$RECON_SENSORS" == "on" ]]; then
   step "Preparing recon sensors"
   pull_image "$OPENCANARY_IMAGE"
+  repair_opencanary_volume
 fi
 
 {

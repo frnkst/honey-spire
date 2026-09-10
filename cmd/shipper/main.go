@@ -123,10 +123,12 @@ func loadConfig() (config, error) {
 		return cfg, err
 	}
 
-	var missing []string
-	if !cfg.sidecar {
+	if cfg.sidecar {
 		// The sidecar on hive/full installs writes recon events to a local
-		// file for the app to tail; it never talks to the hive.
+		// file for the app to tail; it never talks to the hive, so the hive
+		// URL and token stay unset by design.
+	} else {
+		var missing []string
 		cfg.hiveURL = envString("HIVE_URL", os.Getenv("TOWER_URL"))
 		if cfg.hiveURL == "" {
 			missing = append(missing, "HIVE_URL")
@@ -137,20 +139,20 @@ func loadConfig() (config, error) {
 		if cfg.name == "" {
 			missing = append(missing, "SENSOR_NAME")
 		}
-	}
-	if len(missing) > 0 {
-		return cfg, fmt.Errorf("missing required environment variables: %s", missing)
-	}
+		if len(missing) > 0 {
+			return cfg, fmt.Errorf("missing required environment variables: %s", missing)
+		}
 
-	parsed, err := url.Parse(cfg.hiveURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return cfg, fmt.Errorf("HIVE_URL must be an http(s) URL, got %q", cfg.hiveURL)
-	}
-	cfg.hiveURL = parsed.Scheme + "://" + parsed.Host + parsed.Path
-	cfg.hiveURL = trimTrailingSlash(cfg.hiveURL)
+		parsed, err := url.Parse(cfg.hiveURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return cfg, fmt.Errorf("HIVE_URL must be an http(s) URL, got %q", cfg.hiveURL)
+		}
+		cfg.hiveURL = parsed.Scheme + "://" + parsed.Host + parsed.Path
+		cfg.hiveURL = trimTrailingSlash(cfg.hiveURL)
 
-	if !tokenPattern.MatchString(cfg.token) {
-		return cfg, fmt.Errorf("SENSOR_TOKEN must be 64 hex characters")
+		if !tokenPattern.MatchString(cfg.token) {
+			return cfg, fmt.Errorf("SENSOR_TOKEN must be 64 hex characters")
+		}
 	}
 
 	if cfg.flushInterval, err = envDuration("FLUSH_INTERVAL", 5*time.Second); err != nil {
