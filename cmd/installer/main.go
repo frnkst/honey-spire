@@ -44,16 +44,16 @@ type topology int
 
 const (
 	topologyFull topology = iota
-	topologyTower
-	topologyBeecon
+	topologyHive
+	topologySensor
 )
 
 func (t topology) name() string {
 	switch t {
-	case topologyTower:
-		return "tower"
-	case topologyBeecon:
-		return "beecon"
+	case topologyHive:
+		return "hive"
+	case topologySensor:
+		return "sensor"
 	default:
 		return "full"
 	}
@@ -62,9 +62,9 @@ func (t topology) name() string {
 func topologyByIndex(index int) topology {
 	switch index {
 	case 1:
-		return topologyTower
+		return topologyHive
 	case 2:
-		return topologyBeecon
+		return topologySensor
 	default:
 		return topologyFull
 	}
@@ -80,8 +80,8 @@ type installConfig struct {
 	maxmindKey        string
 	telegramBotToken  string
 	telegramChatID    string
-	towerURL          string
-	beeconName        string
+	hiveURL          string
+	sensorName        string
 	recon             string
 	generatedPassword bool
 }
@@ -142,17 +142,17 @@ var (
 
 func main() {
 	if runtime.GOOS != "linux" {
-		fmt.Fprintln(os.Stderr, "Honey Spire supports Linux only.")
+		fmt.Fprintln(os.Stderr, "NeonHive supports Linux only.")
 		os.Exit(1)
 	}
 	if os.Geteuid() != 0 {
-		fmt.Fprintln(os.Stderr, "Run Honey Spire as root (for example, with sudo).")
+		fmt.Fprintln(os.Stderr, "Run NeonHive as root (for example, with sudo).")
 		os.Exit(1)
 	}
 
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Honey Spire requires an interactive terminal.")
+		fmt.Fprintln(os.Stderr, "NeonHive requires an interactive terminal.")
 		os.Exit(1)
 	}
 	defer tty.Close()
@@ -214,16 +214,16 @@ func newModel() (model, error) {
 	}, nil
 }
 
-func beeconFields() []formField {
+func sensorFields() []formField {
 	hostname, err := os.Hostname()
 	hostname = strings.TrimSpace(hostname)
 	if err != nil || hostname == "" || !regexp.MustCompile(`^[\w .-]{1,64}$`).MatchString(hostname) {
 		hostname = ""
 	}
 	return []formField{
-		newField("tower_address", "Tower address", "Domain or IP of the tower dashboard, for example tower.example.com. Domains are reached over HTTPS; a bare IP falls back to HTTP when the tower has no TLS.", "tower.example.com", false, ""),
-		newField("beecon_name", "Display name", "Shown on the tower dashboard and in the join request. Spaces are allowed.", "edge-server-01", false, hostname),
-		newField("recon", "Recon sensors", "on or off. Enables nmap scan detection, decoy ports, and Opencanary service honeypots on this beecon.", "on", false, "on"),
+		newField("hive_address", "Hive address", "Domain or IP of the hive dashboard, for example hive.example.com. Domains are reached over HTTPS; a bare IP falls back to HTTP when the hive has no TLS.", "hive.example.com", false, ""),
+		newField("sensor_name", "Display name", "Shown on the hive dashboard and in the join request. Spaces are allowed.", "edge-server-01", false, hostname),
+		newField("recon", "Recon sensors", "on or off. Enables nmap scan detection, decoy ports, and Opencanary service honeypots on this sensor.", "on", false, "on"),
 	}
 }
 
@@ -273,7 +273,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
-	case towerProbeMsg:
+	case hiveProbeMsg:
 		if m.screen != screenProbing {
 			return m, nil
 		}
@@ -285,12 +285,12 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fields[m.fieldIndex].input.SetValue(msg.url)
 		m.errText = ""
-		m.config.towerURL = msg.url
+		m.config.hiveURL = msg.url
 		m.fieldIndex++
 		m.fields[m.fieldIndex].input.Focus()
 		m.screen = screenField
 		if msg.insecure {
-			m.warnText = "The tower answered over plain HTTP, so the beecon token and captured events travel unencrypted. Continue, or esc to enter an https:// address."
+			m.warnText = "The hive answered over plain HTTP, so the sensor token and captured events travel unencrypted. Continue, or esc to enter an https:// address."
 		}
 		return m, textinput.Blink
 	case progressMsg:
@@ -352,9 +352,9 @@ func (m model) updateTopology(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.warnText = ""
 		m.config.topology = topologyByIndex(m.topologyCursor)
-		if m.config.topology == topologyBeecon {
-			m.quickConfig.topology = topologyBeecon
-			m.fields = beeconFields()
+		if m.config.topology == topologySensor {
+			m.quickConfig.topology = topologySensor
+			m.fields = sensorFields()
 			m.fieldIndex = 0
 			m.fields[0].input.Focus()
 			m.screen = screenField
@@ -396,7 +396,7 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.fields[m.fieldIndex].input.Blur()
 		if m.fieldIndex == 0 {
-			if m.config.topology == topologyBeecon {
+			if m.config.topology == topologySensor {
 				m.screen = screenTopology
 			} else {
 				m.screen = screenMode
@@ -416,8 +416,8 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.errText = ""
 
-		if m.config.topology == topologyBeecon && m.fields[m.fieldIndex].key == "tower_address" {
-			candidates, err := normalizeTowerAddress(value)
+		if m.config.topology == topologySensor && m.fields[m.fieldIndex].key == "hive_address" {
+			candidates, err := normalizeHiveAddress(value)
 			if err != nil {
 				m.errText = err.Error()
 				return m, nil
@@ -427,7 +427,7 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errText = ""
 			m.warnText = ""
 			m.screen = screenProbing
-			return m, tea.Batch(m.spinner.Tick, probeTower(candidates))
+			return m, tea.Batch(m.spinner.Tick, probeHive(candidates))
 		}
 		m.fields[m.fieldIndex].input.Blur()
 
@@ -458,9 +458,9 @@ func (m model) updateField(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateReview(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		if m.config.topology == topologyBeecon {
+		if m.config.topology == topologySensor {
 			m.screen = screenField
-			m.fieldIndex = fieldIndex(m.fields, "beecon_name")
+			m.fieldIndex = fieldIndex(m.fields, "sensor_name")
 			m.fields[m.fieldIndex].input.Focus()
 			return m, textinput.Blink
 		}
@@ -490,11 +490,11 @@ func configFromFields(fields []formField) installConfig {
 	for _, field := range fields {
 		values[field.key] = strings.TrimSpace(field.input.Value())
 	}
-	if len(fields) > 0 && fields[0].key == "tower_address" {
+	if len(fields) > 0 && fields[0].key == "hive_address" {
 		return installConfig{
-			topology:   topologyBeecon,
-			towerURL:   values["tower_address"],
-			beeconName: values["beecon_name"],
+			topology:   topologySensor,
+			hiveURL:   values["hive_address"],
+			sensorName: values["sensor_name"],
 			recon:      normalizeRecon(values["recon"]),
 		}
 	}
@@ -529,7 +529,7 @@ func validateField(key, value string, fields []formField) error {
 		if value != "" && !validDomain(value) {
 			return fmt.Errorf("enter a hostname only, without https:// or a path")
 		}
-	case "beecon_name":
+	case "sensor_name":
 		if !regexp.MustCompile(`^[\w .-]{1,64}$`).MatchString(value) {
 			return fmt.Errorf("use 1-64 letters, numbers, spaces, dots, underscores, or dashes")
 		}
@@ -601,22 +601,22 @@ func validDomain(value string) bool {
 	return true
 }
 
-type towerProbeMsg struct {
+type hiveProbeMsg struct {
 	ok       bool
 	url      string
 	insecure bool
 	detail   string
 }
 
-// normalizeTowerAddress accepts a bare host ("tower.example.com",
+// normalizeHiveAddress accepts a bare host ("hive.example.com",
 // "192.0.2.10:3000") or an explicit http(s) URL and returns the probe
 // candidates in the order they should be tried. Explicit schemes are taken
-// literally; bare hosts try https first and then http, because a tower
+// literally; bare hosts try https first and then http, because a hive
 // installed without a domain serves plain HTTP.
-func normalizeTowerAddress(value string) ([]string, error) {
+func normalizeHiveAddress(value string) ([]string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return nil, fmt.Errorf("enter the tower's domain or IP address")
+		return nil, fmt.Errorf("enter the hive's domain or IP address")
 	}
 	inputs := []string{value}
 	if !strings.Contains(value, "://") {
@@ -626,20 +626,20 @@ func normalizeTowerAddress(value string) ([]string, error) {
 	for _, input := range inputs {
 		parsed, err := url.Parse(input)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return nil, fmt.Errorf("enter a valid tower address, for example tower.example.com")
+			return nil, fmt.Errorf("enter a valid hive address, for example hive.example.com")
 		}
 		if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-			return nil, fmt.Errorf("enter the tower address without credentials, query, or fragment")
+			return nil, fmt.Errorf("enter the hive address without credentials, query, or fragment")
 		}
 		candidates = append(candidates, strings.TrimRight(parsed.Scheme+"://"+parsed.Host+parsed.Path, "/"))
 	}
 	return candidates, nil
 }
 
-// probeTower verifies the tower is reachable and is actually Honey Spire
-// before the installer commits the beecon configuration. Candidates are
-// tried in order; the first address answering like a tower wins.
-func probeTower(candidates []string) tea.Cmd {
+// probeHive verifies the hive is reachable and is actually NeonHive
+// before the installer commits the sensor configuration. Candidates are
+// tried in order; the first address answering like a hive wins.
+func probeHive(candidates []string) tea.Cmd {
 	return func() tea.Msg {
 		client := &http.Client{Timeout: 10 * time.Second}
 		details := make([]string, 0, len(candidates))
@@ -655,12 +655,12 @@ func probeTower(candidates []string) tea.Cmd {
 			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body)
 			response.Body.Close()
 			if response.StatusCode != http.StatusOK || decodeErr != nil || body.Status != "ok" {
-				details = append(details, fmt.Sprintf("%s (not a Honey Spire tower)", address))
+				details = append(details, fmt.Sprintf("%s (not a NeonHive hive)", address))
 				continue
 			}
-			return towerProbeMsg{ok: true, url: address, insecure: strings.HasPrefix(address, "http://")}
+			return hiveProbeMsg{ok: true, url: address, insecure: strings.HasPrefix(address, "http://")}
 		}
-		return towerProbeMsg{ok: false, detail: "could not reach the tower: " + strings.Join(details, "; ")}
+		return hiveProbeMsg{ok: false, detail: "could not reach the hive: " + strings.Join(details, "; ")}
 	}
 }
 
@@ -685,7 +685,7 @@ func waitForInstallEvent(events <-chan tea.Msg) tea.Cmd {
 }
 
 func runInstaller(config installConfig, events chan<- tea.Msg) {
-	tempDir, err := os.MkdirTemp("", "honey-spire-installer-*")
+	tempDir, err := os.MkdirTemp("", "neonhive-installer-*")
 	if err != nil {
 		events <- installDoneMsg{err: fmt.Errorf("create installer workspace: %w", err)}
 		return
@@ -708,12 +708,12 @@ func runInstaller(config installConfig, events chan<- tea.Msg) {
 		"MAXMIND_LICENSE_KEY="+config.maxmindKey,
 		"TELEGRAM_BOT_TOKEN="+config.telegramBotToken,
 		"TELEGRAM_CHAT_ID="+config.telegramChatID,
-		"TOWER_URL="+config.towerURL,
-		"BEECON_NAME="+config.beeconName,
+		"HIVE_URL="+config.hiveURL,
+		"SENSOR_NAME="+config.sensorName,
 		"RECON_SENSORS="+config.recon,
 	)
 
-	logPath := valueOr(os.Getenv("HONEY_SPIRE_LOG_FILE"), "/var/log/honey-spire-install.log")
+	logPath := valueOr(os.Getenv("NEON_HIVE_LOG_FILE"), "/var/log/neonhive-install.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
 		events <- installDoneMsg{err: fmt.Errorf("prepare installer log directory: %w", err)}
 		return
@@ -750,7 +750,7 @@ func runInstaller(config installConfig, events chan<- tea.Msg) {
 	scanInstallerOutput(output, events, results, &reportedError)
 	if err := <-waited; err != nil {
 		if reportedError == "" {
-			reportedError = "Deployment did not complete. Inspect /var/log/honey-spire-install.log."
+			reportedError = "Deployment did not complete. Inspect /var/log/neonhive-install.log."
 		}
 		events <- installDoneMsg{
 			results: results,
@@ -802,9 +802,9 @@ func (m model) View() string {
 
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Center,
-		lipgloss.NewStyle().Bold(true).Foreground(dark).Background(gold).Padding(0, 1).Render("HS"),
+		lipgloss.NewStyle().Bold(true).Foreground(dark).Background(gold).Padding(0, 1).Render("NH"),
 		"  ",
-		title.Render("HONEY SPIRE"),
+		title.Render("NEONHIVE"),
 	)
 	line := lipgloss.NewStyle().Foreground(graphite).Render(strings.Repeat("-", max(1, panelWidth-lipgloss.Width(header)-2)))
 	top := lipgloss.JoinHorizontal(lipgloss.Center, header, "  ", line)
@@ -840,8 +840,8 @@ func (m model) topologyView(width int) string {
 		desc string
 	}{
 		{"FULL INSTALL", "ALL-IN-ONE", "Dashboard and honeypot on this server. Everything below in one deployment."},
-		{"TOWER", "DASHBOARD", "Threat dashboard and database only. Beecons ship their events to this server."},
-		{"BEECON", "SENSOR", "Honeypot only. Captures attacks on this server and ships them to a remote tower."},
+		{"HIVE", "DASHBOARD", "Threat dashboard and database only. Sensors ship their events to this server."},
+		{"SENSOR", "HONEYPOT", "Honeypot only. Captures attacks on this server and ships them to a remote hive."},
 	}
 
 	rows := make([]string, 0, len(options))
@@ -875,7 +875,7 @@ func (m model) topologyView(width int) string {
 		kicker.Render("01 / NODE ROLE"),
 		"",
 		lipgloss.NewStyle().Bold(true).Foreground(white).Render("What is this server?"),
-		subtle.Width(width-4).Render("A tower collects and shows attacks. Beecons are the honeypots feeding it."),
+		subtle.Width(width-4).Render("A hive collects and shows attacks. Sensors are the honeypots feeding it."),
 		"",
 		strings.Join(rows, "\n"),
 		"",
@@ -890,13 +890,13 @@ func (m model) probingView(width int) string {
 		BorderForeground(graphite).
 		Padding(1, 2).
 		Render(strings.Join([]string{
-			m.spinner.View() + " " + lipgloss.NewStyle().Bold(true).Foreground(white).Render("Checking the tower"),
+			m.spinner.View() + " " + lipgloss.NewStyle().Bold(true).Foreground(white).Render("Checking the hive"),
 			subtle.Width(width - 8).Render(valueOr(m.probeDetail, "Contacting "+m.fields[m.fieldIndex].input.Value()+" ...")),
 		}, "\n"))
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		kicker.Render("BEECON SETUP"),
+		kicker.Render("SENSOR SETUP"),
 		"",
 		panel,
 		"",
@@ -946,8 +946,8 @@ func (m model) modeView(width int) string {
 		"",
 		lipgloss.NewStyle().Bold(true).Foreground(white).Render("How should this node be configured?"),
 		subtle.Render(func() string {
-			if m.config.topology == topologyTower {
-				return "Tower only: the real SSH daemon stays untouched on port 22."
+			if m.config.topology == topologyHive {
+				return "Hive only: the real SSH daemon stays untouched on port 22."
 			}
 			return "The real SSH daemon will move to port 3001 so the honeypot can claim port 22."
 		}()),
@@ -989,9 +989,9 @@ func (m model) fieldView(width int) string {
 func (m model) reviewView(width int) string {
 	var rows []string
 	switch m.config.topology {
-	case topologyTower:
+	case topologyHive:
 		rows = []string{
-			summaryRow("TOPOLOGY", "TOWER"),
+			summaryRow("TOPOLOGY", "HIVE"),
 			summaryRow("PROFILE", strings.ToUpper(m.config.mode)),
 			summaryRow("DASHBOARD", valueOr(m.config.domain, "Automatic public IPv4")),
 			summaryRow("ADMIN", m.config.adminUsername),
@@ -999,17 +999,17 @@ func (m model) reviewView(width int) string {
 			summaryRow("TELEGRAM", configuredLabel(m.config.telegramBotToken)),
 			summaryRow("RECON", strings.ToUpper(m.config.recon)),
 			summaryRow("REAL SSH", "Unchanged (port 22)"),
-			summaryRow("HONEYPOT", "None - remote beecons report to this dashboard"),
+			summaryRow("HONEYPOT", "None - remote sensors report to this dashboard"),
 		}
-	case topologyBeecon:
+	case topologySensor:
 		rows = []string{
-			summaryRow("TOPOLOGY", "BEECON"),
-			summaryRow("TOWER", m.config.towerURL),
-			summaryRow("DISPLAY NAME", m.config.beeconName),
+			summaryRow("TOPOLOGY", "SENSOR"),
+			summaryRow("HIVE", m.config.hiveURL),
+			summaryRow("DISPLAY NAME", m.config.sensorName),
 			summaryRow("RECON", strings.ToUpper(m.config.recon)),
 			summaryRow("REAL SSH", "Port 3001"),
 			summaryRow("HONEYPOT", "Port 22"),
-			summaryRow("JOINING", "You will approve this beecon on the tower's dashboard after install"),
+			summaryRow("JOINING", "You will approve this sensor on the hive's dashboard after install"),
 		}
 	default:
 		rows = []string{
@@ -1036,7 +1036,7 @@ func (m model) reviewView(width int) string {
 		kicker.Render("02 / READY TO DEPLOY"),
 		"",
 		lipgloss.NewStyle().Bold(true).Foreground(white).Render("Review the installation plan"),
-		subtle.Width(width-4).Render("Keep this SSH session open. Honey Spire verifies port 3001 before claiming port 22."),
+		subtle.Width(width-4).Render("Keep this SSH session open. NeonHive verifies port 3001 before claiming port 22."),
 		"",
 		panel,
 		"",
@@ -1092,38 +1092,38 @@ func (m model) successView(width int) string {
 	var footnotes []string
 
 	switch m.config.topology {
-	case topologyTower:
+	case topologyHive:
 		panelBody = []string{
-			lipgloss.NewStyle().Bold(true).Foreground(success).Render("TOWER IS ONLINE"),
+			lipgloss.NewStyle().Bold(true).Foreground(success).Render("HIVE IS ONLINE"),
 			"",
 			summaryRow("DASHBOARD", dashboard),
 			summaryRow("USERNAME", m.config.adminUsername),
 			summaryRow("PASSWORD", valueOr(m.config.adminPassword, "Use the password supplied during setup")),
 			"",
 			subtle.Render("The real SSH daemon was left untouched on port 22."),
-			subtle.Render("Run the installer on each sensor server and choose BEECON;"),
-			subtle.Render("approve every joining beecon in this dashboard."),
+			subtle.Render("Run the installer on each sensor server and choose SENSOR;"),
+			subtle.Render("approve every joining sensor in this dashboard."),
 		}
 		footnotes = []string{
-			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")),
+			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/neonhive-install.log")),
 		}
-	case topologyBeecon:
+	case topologySensor:
 		panelBody = []string{
-			lipgloss.NewStyle().Bold(true).Foreground(success).Render("BEECON IS ONLINE"),
+			lipgloss.NewStyle().Bold(true).Foreground(success).Render("SENSOR IS ONLINE"),
 			"",
-			summaryRow("TOWER", valueOr(m.results["tower"], m.config.towerURL)),
-			summaryRow("DISPLAY NAME", m.config.beeconName),
-			summaryRow("TOKEN ID", valueOr(m.results["token"], "(see /opt/honey-spire/.env)")),
+			summaryRow("HIVE", valueOr(m.results["hive"], m.config.hiveURL)),
+			summaryRow("DISPLAY NAME", m.config.sensorName),
+			summaryRow("TOKEN ID", valueOr(m.results["token"], "(see /opt/neonhive/.env)")),
 			"",
 			subtle.Render("Real SSH moved to port 3001. Verify it now in a second terminal:"),
 			lipgloss.NewStyle().Bold(true).Foreground(gold).Render(sshCommand),
 			"",
-			subtle.Render("The beecon buffers events until you approve it on the"),
-			subtle.Render("tower dashboard: Beecon " + m.config.beeconName + " wants to join this tower."),
+			subtle.Render("The sensor buffers events until you approve it on the"),
+			subtle.Render("hive dashboard: Sensor " + m.config.sensorName + " wants to join this hive."),
 		}
 		footnotes = []string{
 			errorText.Render("Keep this terminal open until the SSH command succeeds."),
-			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")),
+			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/neonhive-install.log")),
 		}
 	default:
 		credential := lipgloss.JoinVertical(
@@ -1139,7 +1139,7 @@ func (m model) successView(width int) string {
 			)
 		}
 		panelBody = []string{
-			lipgloss.NewStyle().Bold(true).Foreground(success).Render("HONEY SPIRE IS ONLINE"),
+			lipgloss.NewStyle().Bold(true).Foreground(success).Render("NEONHIVE IS ONLINE"),
 			"",
 			summaryRow("DASHBOARD", dashboard),
 			credential,
@@ -1150,7 +1150,7 @@ func (m model) successView(width int) string {
 		footnotes = []string{
 			errorText.Render("Keep this terminal open until the SSH command succeeds."),
 			subtle.Render("Honeypot traffic is now being captured on port 22."),
-			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")),
+			subtle.Render("Installer log: " + valueOr(m.results["log_file"], "/var/log/neonhive-install.log")),
 		}
 	}
 
@@ -1184,7 +1184,7 @@ func (m model) failureView(width int) string {
 			lipgloss.NewStyle().Width(width-10).Foreground(white).Render(m.errText),
 			"",
 			subtle.Render("Any in-progress SSH migration was rolled back automatically."),
-			subtle.Render("Diagnostics: /var/log/honey-spire-install.log"),
+			subtle.Render("Diagnostics: /var/log/neonhive-install.log"),
 		))
 	return lipgloss.JoinVertical(lipgloss.Left, kicker.Render("INSTALLER HALTED"), "", panel, "", help.Render("enter close installer"))
 }
@@ -1195,42 +1195,42 @@ func (m model) persistentSummary() string {
 		sshHost := valueOr(m.results["ssh_host"], "your-server")
 		sshUser := valueOr(m.results["ssh_user"], "root")
 		sshCommand := fmt.Sprintf("ssh -p 3001 %s@%s", sshUser, sshHost)
-		logLine := "Installer log: " + valueOr(m.results["log_file"], "/var/log/honey-spire-install.log")
+		logLine := "Installer log: " + valueOr(m.results["log_file"], "/var/log/neonhive-install.log")
 
 		switch m.config.topology {
-		case topologyTower:
+		case topologyHive:
 			return strings.Join([]string{
 				"",
-				lipgloss.NewStyle().Bold(true).Foreground(success).Render("TOWER IS ONLINE"),
+				lipgloss.NewStyle().Bold(true).Foreground(success).Render("HIVE IS ONLINE"),
 				"Dashboard: " + valueOr(m.results["dashboard"], "Deployment complete"),
 				"Username:  " + m.config.adminUsername,
 				"Password:  " + valueOr(m.config.adminPassword, "Use the password supplied during setup"),
 				"",
 				"Real SSH remains on port 22.",
-				"Run the installer on each sensor server and choose BEECON.",
-				"Approve every joining beecon in the tower dashboard.",
+				"Run the installer on each sensor server and choose SENSOR.",
+				"Approve every joining sensor in the hive dashboard.",
 				logLine,
 				"",
 			}, "\n")
-		case topologyBeecon:
+		case topologySensor:
 			return strings.Join([]string{
 				"",
-				lipgloss.NewStyle().Bold(true).Foreground(success).Render("BEECON IS ONLINE"),
-				"Tower:       " + valueOr(m.results["tower"], m.config.towerURL),
-				"Display name:" + " " + m.config.beeconName,
+				lipgloss.NewStyle().Bold(true).Foreground(success).Render("SENSOR IS ONLINE"),
+				"Hive:       " + valueOr(m.results["hive"], m.config.hiveURL),
+				"Display name:" + " " + m.config.sensorName,
 				"",
 				"Real SSH moved to port 3001. Verify it in a second terminal:",
 				lipgloss.NewStyle().Bold(true).Foreground(gold).Render(sshCommand),
 				"",
 				"Keep this terminal open until the SSH command succeeds.",
-				"The beecon buffers events until you approve it on the tower dashboard.",
+				"The sensor buffers events until you approve it on the hive dashboard.",
 				logLine,
 				"",
 			}, "\n")
 		default:
 			lines := []string{
 				"",
-				lipgloss.NewStyle().Bold(true).Foreground(success).Render("HONEY SPIRE IS ONLINE"),
+				lipgloss.NewStyle().Bold(true).Foreground(success).Render("NEONHIVE IS ONLINE"),
 				"Dashboard: " + valueOr(m.results["dashboard"], "Deployment complete"),
 				"Username:  " + m.config.adminUsername,
 			}
@@ -1253,9 +1253,9 @@ func (m model) persistentSummary() string {
 	case screenFailure:
 		return strings.Join([]string{
 			"",
-			errorText.Bold(true).Render("HONEY SPIRE INSTALLATION FAILED"),
+			errorText.Bold(true).Render("NEONHIVE INSTALLATION FAILED"),
 			m.errText,
-			"Diagnostics: /var/log/honey-spire-install.log",
+			"Diagnostics: /var/log/neonhive-install.log",
 			"",
 		}, "\n")
 	default:

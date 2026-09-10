@@ -1,4 +1,4 @@
-import { LOCAL_BEECON_ID } from "@/lib/beecons";
+import { LOCAL_SENSOR_ID } from "@/lib/sensors";
 import { getConfig } from "@/lib/config";
 import { tailJsonLogSource } from "@/lib/cowrie";
 import { insertSignal } from "@/lib/db";
@@ -20,7 +20,7 @@ const MAX_SUMMARY = 256;
 const MAX_DETAIL = 2048;
 
 export interface SignalContext {
-  beeconId: string;
+  sensorId: string;
 }
 
 function parseTimestamp(value: unknown) {
@@ -59,13 +59,13 @@ type SignalDraft = Pick<
   | "detail"
 >;
 
-async function storeSignal(draft: SignalDraft, { beeconId }: SignalContext) {
+async function storeSignal(draft: SignalDraft, { sensorId }: SignalContext) {
   const geo = await geolocateIp(draft.sourceIp);
   const signal: Omit<SignalEvent, "id"> = {
     ...draft,
     summary: truncate(draft.summary, MAX_SUMMARY),
     detail: draft.detail ? truncate(draft.detail, MAX_DETAIL) : null,
-    beeconId,
+    sensorId,
     countryCode: geo.countryCode,
     countryName: geo.countryName,
     city: geo.city,
@@ -79,13 +79,13 @@ async function storeSignal(draft: SignalDraft, { beeconId }: SignalContext) {
 }
 
 /**
- * Handles one enveloped recon event from a beecon or the sensor sidecar:
+ * Handles one enveloped recon event from a sensor or the sensor sidecar:
  * {"kind":"scan"|"decoy", ...} or {"kind":"opencanary","record":{...}}.
- * Unknown kinds are ignored so old towers survive newer sensors.
+ * Unknown kinds are ignored so old hives survive newer sensors.
  */
 export async function processSignal(
   record: Record<string, unknown>,
-  context: SignalContext = { beeconId: LOCAL_BEECON_ID },
+  context: SignalContext = { sensorId: LOCAL_SENSOR_ID },
 ) {
   switch (String(record.kind ?? "")) {
     case "scan":
@@ -205,9 +205,9 @@ async function storeOpencanary(
 }
 
 /**
- * Tails the tower-local recon sources: the sensor sidecar's enveloped event
+ * Tails the hive-local recon sources: the sensor sidecar's enveloped event
  * log and Opencanary's JSON log. Both are optional (empty path = disabled);
- * beecon-side equivalents flow through the ingest API instead.
+ * sensor-side equivalents flow through the ingest API instead.
  */
 export async function readNewSensorEvents() {
   const config = getConfig();

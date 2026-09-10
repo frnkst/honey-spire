@@ -5,11 +5,11 @@ import { randomBytes } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/ingest/route";
-import { approveBeecon, registerJoin } from "@/lib/beecons";
+import { approveSensor, registerJoin } from "@/lib/sensors";
 
 beforeAll(() => {
   const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "honey-spire-ingest-route-"),
+    path.join(os.tmpdir(), "neonhive-ingest-route-"),
   );
   process.env.DATABASE_PATH = path.join(directory, "test.db");
   process.env.GEOLITE_DIR = path.join(directory, "geolite");
@@ -17,12 +17,12 @@ beforeAll(() => {
 
 function approvedToken() {
   const token = randomBytes(32).toString("hex");
-  const { beeconId } = registerJoin({
-    name: "route-beecon",
+  const { sensorId } = registerJoin({
+    name: "route-sensor",
     token,
     ip: "192.0.2.7",
   });
-  return { token, beeconId, approve: () => approveBeecon(beeconId) };
+  return { token, sensorId, approve: () => approveSensor(sensorId) };
 }
 
 function ingestRequest(
@@ -56,14 +56,14 @@ describe("POST /api/ingest", () => {
     expect(await unknown.json()).toMatchObject({ code: "unknown_token" });
   });
 
-  it("holds batches from pending beecons", async () => {
+  it("holds batches from pending sensors", async () => {
     const { token } = approvedToken(); // not approved
     const response = await POST(ingestRequest({ events: [loginRecord] }, token));
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ code: "pending" });
   });
 
-  it("accepts batches from approved beecons", async () => {
+  it("accepts batches from approved sensors", async () => {
     const { token, approve } = approvedToken();
     approve();
     const response = await POST(

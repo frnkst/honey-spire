@@ -1,13 +1,13 @@
-name: honey-spire
+name: neonhive
 
 services:
   app:
-    image: ${HONEY_SPIRE_IMAGE:-ghcr.io/frnkst/honey-spire:latest}
+    image: ${NEON_HIVE_IMAGE:-ghcr.io/frnkst/neonhive:latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      HONEY_SPIRE_MODE: full
-      DATABASE_PATH: /data/app/honey-spire.db
+      NEON_HIVE_MODE: full
+      DATABASE_PATH: /data/app/neonhive.db
       COWRIE_JSON_LOG: /data/cowrie/log/cowrie/cowrie.json
       COWRIE_TTY_DIR: /data/cowrie/log/cowrie
       GEOLITE_DIR: /data/geolite
@@ -148,7 +148,7 @@ services:
   # Low-interaction service honeypots (MySQL, MSSQL, FTP, telnet, VNC, NTP,
   # git, RDP, redis, HTTP) enabled by the recon profile.
   opencanary:
-    image: ${OPENCANARY_IMAGE:-ghcr.io/frnkst/honey-spire-opencanary:latest}
+    image: ${OPENCANARY_IMAGE:-ghcr.io/frnkst/neonhive-opencanary:latest}
     profiles: ["recon"]
     restart: unless-stopped
     ports:
@@ -190,7 +190,7 @@ services:
   # the sniffer sees packets before Docker NAT. Writes events for the app to
   # tail from the shared volume.
   sensor:
-    image: ${HONEY_SPIRE_SHIPPER_IMAGE:-ghcr.io/frnkst/honey-spire-shipper:latest}
+    image: ${NEON_HIVE_SHIPPER_IMAGE:-ghcr.io/frnkst/neonhive-shipper:latest}
     profiles: ["recon"]
     restart: unless-stopped
     network_mode: host

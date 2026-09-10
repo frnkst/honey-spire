@@ -8,19 +8,19 @@ import (
 
 func TestLoadConfigValidatesInput(t *testing.T) {
 	valid := func(t *testing.T) {
-		t.Setenv("TOWER_URL", "https://tower.example.com/")
-		t.Setenv("BEECON_TOKEN", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
-		t.Setenv("BEECON_NAME", "garden sensor")
+		t.Setenv("HIVE_URL", "https://hive.example.com/")
+		t.Setenv("SENSOR_TOKEN", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+		t.Setenv("SENSOR_NAME", "garden sensor")
 	}
 
-	t.Run("normalizes the tower url", func(t *testing.T) {
+	t.Run("normalizes the hive url", func(t *testing.T) {
 		valid(t)
 		cfg, err := loadConfig()
 		if err != nil {
 			t.Fatalf("loadConfig: %v", err)
 		}
-		if cfg.towerURL != "https://tower.example.com" {
-			t.Fatalf("tower URL not normalized: %q", cfg.towerURL)
+		if cfg.hiveURL != "https://hive.example.com" {
+			t.Fatalf("hive URL not normalized: %q", cfg.hiveURL)
 		}
 		if cfg.flushInterval != 5*time.Second || cfg.batchMaxEvents != 500 {
 			t.Fatalf("unexpected defaults: %+v", cfg)
@@ -28,9 +28,9 @@ func TestLoadConfigValidatesInput(t *testing.T) {
 	})
 
 	t.Run("rejects missing variables", func(t *testing.T) {
-		t.Setenv("TOWER_URL", "")
-		t.Setenv("BEECON_TOKEN", "")
-		t.Setenv("BEECON_NAME", "")
+		t.Setenv("HIVE_URL", "")
+		t.Setenv("SENSOR_TOKEN", "")
+		t.Setenv("SENSOR_NAME", "")
 		if _, err := loadConfig(); err == nil {
 			t.Fatal("expected an error for missing variables")
 		}
@@ -38,15 +38,15 @@ func TestLoadConfigValidatesInput(t *testing.T) {
 
 	t.Run("rejects a malformed token", func(t *testing.T) {
 		valid(t)
-		t.Setenv("BEECON_TOKEN", "not-hex")
+		t.Setenv("SENSOR_TOKEN", "not-hex")
 		if _, err := loadConfig(); err == nil {
 			t.Fatal("expected an error for a malformed token")
 		}
 	})
 
-	t.Run("rejects a non-http tower url", func(t *testing.T) {
+	t.Run("rejects a non-http hive url", func(t *testing.T) {
 		valid(t)
-		t.Setenv("TOWER_URL", "ftp://tower.example.com")
+		t.Setenv("HIVE_URL", "ftp://hive.example.com")
 		if _, err := loadConfig(); err == nil {
 			t.Fatal("expected an error for a non-http URL")
 		}

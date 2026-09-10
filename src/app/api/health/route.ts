@@ -8,6 +8,6 @@ export function GET() {
   getDatabase().prepare("SELECT 1").get();
   return NextResponse.json({
     status: "ok",
-    mode: getConfig().HONEY_SPIRE_MODE,
+    mode: getConfig().NEON_HIVE_MODE,
   });
 }

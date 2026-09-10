@@ -1,4 +1,4 @@
-import { touchBeecon } from "@/lib/beecons";
+import { touchSensor } from "@/lib/sensors";
 import { processCowrieRecord } from "@/lib/cowrie";
 import { processSignal } from "@/lib/signals";
 
@@ -11,15 +11,15 @@ export interface IngestResult {
 }
 
 /**
- * Feeds a batch of raw JSON lines from a beecon through the ingestion
- * pipeline, tagged with the beecon's id. Lines carrying a `kind` envelope are
+ * Feeds a batch of raw JSON lines from a sensor through the ingestion
+ * pipeline, tagged with the sensor's id. Lines carrying a `kind` envelope are
  * recon signals (scan/decoy/opencanary); everything else is treated as a raw
  * Cowrie record. Malformed lines count as skipped and never fail the batch —
- * the tower's UNIQUE constraints make the shipper's at-least-once delivery
+ * the hive's UNIQUE constraints make the shipper's at-least-once delivery
  * safe to dedupe.
  */
 export async function ingestBatch(
-  beeconId: string,
+  sensorId: string,
   events: string[],
   ip: string,
 ): Promise<IngestResult> {
@@ -33,19 +33,19 @@ export async function ingestBatch(
     try {
       const record = JSON.parse(raw);
       if (record && typeof record === "object" && "kind" in record) {
-        await processSignal(record as Record<string, unknown>, { beeconId });
+        await processSignal(record as Record<string, unknown>, { sensorId });
       } else {
-        await processCowrieRecord(record, { beeconId });
+        await processCowrieRecord(record, { sensorId });
       }
       accepted += 1;
     } catch (error) {
       console.warn(
-        "Skipping malformed beecon event:",
+        "Skipping malformed sensor event:",
         error instanceof Error ? error.message : error,
       );
       skipped += 1;
     }
   }
-  touchBeecon(beeconId, ip, events.length);
+  touchSensor(sensorId, ip, events.length);
   return { accepted, skipped };
 }

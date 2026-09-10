@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPOSITORY="${HONEY_SPIRE_REPOSITORY:-frnkst/honey-spire}"
-RELEASE_REF="${HONEY_SPIRE_VERSION:-main}"
-INSTALL_DIR="${HONEY_SPIRE_INSTALL_DIR:-/opt/honey-spire}"
+REPOSITORY="${NEON_HIVE_REPOSITORY:-frnkst/NeonHive}"
+RELEASE_REF="${NEON_HIVE_VERSION:-main}"
+INSTALL_DIR="${NEON_HIVE_INSTALL_DIR:-/opt/neonhive}"
 if [[ "$RELEASE_REF" == "main" ]]; then
   DEFAULT_IMAGE_TAG="latest"
 else
   DEFAULT_IMAGE_TAG="$RELEASE_REF"
 fi
-IMAGE="${HONEY_SPIRE_IMAGE:-ghcr.io/frnkst/honey-spire:${DEFAULT_IMAGE_TAG}}"
-SHIPPER_IMAGE="${HONEY_SPIRE_SHIPPER_IMAGE:-ghcr.io/frnkst/honey-spire-shipper:${DEFAULT_IMAGE_TAG}}"
+IMAGE="${NEON_HIVE_IMAGE:-ghcr.io/frnkst/NeonHive:${DEFAULT_IMAGE_TAG}}"
+SHIPPER_IMAGE="${NEON_HIVE_SHIPPER_IMAGE:-ghcr.io/frnkst/NeonHive-shipper:${DEFAULT_IMAGE_TAG}}"
 TOPOLOGY="${INSTALL_TOPOLOGY:-full}"
 case "$TOPOLOGY" in
-  full | tower | beecon) ;;
+  full | hive | sensor) ;;
   *) fail "Unsupported install topology: ${TOPOLOGY}." ;;
 esac
 SSH_PORT=3001
 SSH_BACKUP=""
 SSH_CHANGED=0
-LOG_FILE="${HONEY_SPIRE_LOG_FILE:-/var/log/honey-spire-install.log}"
+LOG_FILE="${NEON_HIVE_LOG_FILE:-/var/log/neonhive-install.log}"
 FAILURE_REPORTED=0
 
 step() {
@@ -83,7 +83,7 @@ report_failure() {
   set +e
 
   printf '::error::%s\n' "$failed_command"
-  printf '\nHoney Spire installation failed.\n' >&2
+  printf '\nNeonHive installation failed.\n' >&2
   printf '  Exit code: %s\n' "$exit_code" >&2
   printf '  Script line: %s\n' "$line_number" >&2
   printf '  Failed step: %s\n' "$failed_command" >&2
@@ -135,13 +135,13 @@ pull_image() {
 }
 
 require_configuration() {
-  if [[ "$TOPOLOGY" == "beecon" ]]; then
-    [[ -n "${TOWER_URL:-}" ]] || fail "TOWER_URL was not supplied by the installer."
-    [[ "$TOWER_URL" =~ ^https?:// ]] ||
-      fail "TOWER_URL must start with http:// or https://."
+  if [[ "$TOPOLOGY" == "sensor" ]]; then
+    [[ -n "${HIVE_URL:-}" ]] || fail "HIVE_URL was not supplied by the installer."
+    [[ "$HIVE_URL" =~ ^https?:// ]] ||
+      fail "HIVE_URL must start with http:// or https://."
     local name_pattern='^[A-Za-z0-9_. -]{1,64}$'
-    [[ "${BEECON_NAME:-}" =~ $name_pattern ]] ||
-      fail "BEECON_NAME must be 1-64 letters, numbers, spaces, dots, underscores, or dashes."
+    [[ "${SENSOR_NAME:-}" =~ $name_pattern ]] ||
+      fail "SENSOR_NAME must be 1-64 letters, numbers, spaces, dots, underscores, or dashes."
     return
   fi
   local variable
@@ -179,7 +179,7 @@ if [[ -n "$MAXMIND_ACCOUNT_ID" || -n "$MAXMIND_LICENSE_KEY" ]]; then
 fi
 
 step "Checking server compatibility"
-[[ "$(uname -s)" == "Linux" ]] || fail "Honey Spire supports Linux only."
+[[ "$(uname -s)" == "Linux" ]] || fail "NeonHive supports Linux only."
 case "$(uname -m)" in
   x86_64 | aarch64 | arm64) ;;
   *) fail "Supported CPU architectures are x86_64 and ARM64." ;;
@@ -207,7 +207,7 @@ AVAILABLE_GB="$(df -Pk / | awk 'NR == 2 { print int($4 / 1024 / 1024) }')"
   fail "At least 8 GB of free disk space is required; detected ${AVAILABLE_GB} GB."
 
 SSH_HOST=""
-if [[ "$TOPOLOGY" == "beecon" ]]; then
+if [[ "$TOPOLOGY" == "sensor" ]]; then
   step "Detecting the server's public address"
   PUBLIC_IP="$(
     curl -4fsS --max-time 10 https://api.ipify.org ||
@@ -263,7 +263,7 @@ if [[ "$(awk '/SwapTotal/ { print int($2 / 1024) }' /proc/meminfo)" -lt 1024 ]];
   swapon /swapfile 2>/dev/null || true
   grep -qF '/swapfile none swap sw 0 0' /etc/fstab ||
     printf '/swapfile none swap sw 0 0\n' >>/etc/fstab
-  printf 'vm.swappiness=10\n' >/etc/sysctl.d/99-honey-spire.conf
+  printf 'vm.swappiness=10\n' >/etc/sysctl.d/99-neonhive.conf
   sysctl --system >/dev/null
 fi
 
@@ -283,13 +283,13 @@ case "$TOPOLOGY" in
     fetch_file "deploy/sitecustomize.py" "$INSTALL_DIR/deploy/sitecustomize.py"
     fetch_file "deploy/opencanary.conf" "$INSTALL_DIR/deploy/opencanary.conf"
     ;;
-  tower)
-    fetch_file "compose.tower.yaml" "$INSTALL_DIR/compose.yaml"
+  hive)
+    fetch_file "compose.hive.yaml" "$INSTALL_DIR/compose.yaml"
     fetch_file "deploy/Caddyfile" "$INSTALL_DIR/deploy/Caddyfile"
     fetch_file "deploy/opencanary.conf" "$INSTALL_DIR/deploy/opencanary.conf"
     ;;
-  beecon)
-    fetch_file "compose.beecon.yaml" "$INSTALL_DIR/compose.yaml"
+  sensor)
+    fetch_file "compose.sensor.yaml" "$INSTALL_DIR/compose.yaml"
     fetch_file "deploy/cowrie.cfg" "$INSTALL_DIR/deploy/cowrie.cfg"
     fetch_file "deploy/sitecustomize.py" "$INSTALL_DIR/deploy/sitecustomize.py"
     fetch_file "deploy/opencanary.conf" "$INSTALL_DIR/deploy/opencanary.conf"
@@ -300,11 +300,11 @@ for deployed in "$INSTALL_DIR"/deploy/*; do
 done
 
 TOKEN_SUFFIX=""
-if [[ "$TOPOLOGY" == "beecon" ]]; then
-  step "Preparing beecon credentials"
+if [[ "$TOPOLOGY" == "sensor" ]]; then
+  step "Preparing sensor credentials"
   pull_image "$SHIPPER_IMAGE"
-  BEECON_TOKEN="$(openssl rand -hex 32)"
-  TOKEN_SUFFIX="...${BEECON_TOKEN: -4}"
+  SENSOR_TOKEN="$(openssl rand -hex 32)"
+  TOKEN_SUFFIX="...${SENSOR_TOKEN: -4}"
 else
   step "Preparing application secrets"
   pull_image "$IMAGE"
@@ -316,18 +316,18 @@ else
   SESSION_SECRET="$(openssl rand -hex 32)"
 fi
 
-OPENCANARY_IMAGE="${OPENCANARY_IMAGE:-ghcr.io/frnkst/honey-spire-opencanary:${DEFAULT_IMAGE_TAG}}"
+OPENCANARY_IMAGE="${OPENCANARY_IMAGE:-ghcr.io/frnkst/NeonHive-opencanary:${DEFAULT_IMAGE_TAG}}"
 if [[ "$RECON_SENSORS" == "on" ]]; then
   step "Preparing recon sensors"
   pull_image "$OPENCANARY_IMAGE"
 fi
 
 {
-  if [[ "$TOPOLOGY" == "beecon" ]]; then
-    printf 'HONEY_SPIRE_SHIPPER_IMAGE=%s\n' "$(env_quote "$SHIPPER_IMAGE")"
-    printf 'TOWER_URL=%s\n' "$(env_quote "$TOWER_URL")"
-    printf 'BEECON_TOKEN=%s\n' "$(env_quote "$BEECON_TOKEN")"
-    printf 'BEECON_NAME=%s\n' "$(env_quote "$BEECON_NAME")"
+  if [[ "$TOPOLOGY" == "sensor" ]]; then
+    printf 'NEON_HIVE_SHIPPER_IMAGE=%s\n' "$(env_quote "$SHIPPER_IMAGE")"
+    printf 'HIVE_URL=%s\n' "$(env_quote "$HIVE_URL")"
+    printf 'SENSOR_TOKEN=%s\n' "$(env_quote "$SENSOR_TOKEN")"
+    printf 'SENSOR_NAME=%s\n' "$(env_quote "$SENSOR_NAME")"
     printf 'HONEYPOT_SSH_PORT=22\n'
     if [[ "$RECON_SENSORS" == "on" ]]; then
       printf 'COMPOSE_PROFILES=recon\n'
@@ -339,7 +339,7 @@ fi
     fi
   else
     printf 'SITE_ADDRESS=%s\n' "$(env_quote "$SITE_ADDRESS")"
-    printf 'HONEY_SPIRE_IMAGE=%s\n' "$(env_quote "$IMAGE")"
+    printf 'NEON_HIVE_IMAGE=%s\n' "$(env_quote "$IMAGE")"
     printf 'ADMIN_USERNAME=%s\n' "$(env_quote "$ADMIN_USERNAME")"
     printf 'ADMIN_PASSWORD_HASH=%s\n' "$(env_quote "$ADMIN_PASSWORD_HASH")"
     printf 'SESSION_SECRET=%s\n' "$(env_quote "$SESSION_SECRET")"
@@ -352,7 +352,7 @@ fi
     printf 'TELEGRAM_DAILY_INTERVAL_HOURS=24\n'
     printf 'RETENTION_DAYS=90\n'
     printf 'RAW_SESSION_RETENTION_DAYS=7\n'
-    printf 'HONEY_SPIRE_MODE=%s\n' "$TOPOLOGY"
+    printf 'NEON_HIVE_MODE=%s\n' "$TOPOLOGY"
     if [[ "$RECON_SENSORS" == "on" ]]; then
       printf 'COMPOSE_PROFILES=recon\n'
       printf 'OPENCANARY_IMAGE=%s\n' "$(env_quote "$OPENCANARY_IMAGE")"
@@ -362,8 +362,8 @@ fi
   fi
 } >"$INSTALL_DIR/.env"
 chmod 600 "$INSTALL_DIR/.env"
-if [[ "$TOPOLOGY" == "beecon" ]]; then
-  unset BEECON_TOKEN
+if [[ "$TOPOLOGY" == "sensor" ]]; then
+  unset SENSOR_TOKEN
 else
   unset ADMIN_PASSWORD_HASH SESSION_SECRET MAXMIND_ACCOUNT_ID MAXMIND_LICENSE_KEY
   unset TELEGRAM_BOT_TOKEN
@@ -371,7 +371,7 @@ fi
 
 step "Opening required firewall ports"
 open_firewall_port "$SSH_PORT"
-if [[ "$TOPOLOGY" != "beecon" ]]; then
+if [[ "$TOPOLOGY" != "sensor" ]]; then
   open_firewall_port 80
   if [[ -n "$DOMAIN" ]]; then
     open_firewall_port 443
@@ -386,7 +386,7 @@ fi
 # With a dashboard domain, stray web traffic (requests to the bare IP or any
 # other hostname) feeds the Opencanary HTTP honeypot instead of getting Caddy's
 # default response. The dashboard's own hostname keeps working normally.
-if [[ "$RECON_SENSORS" == "on" && "$TOPOLOGY" != "beecon" && -n "$DOMAIN" ]]; then
+if [[ "$RECON_SENSORS" == "on" && "$TOPOLOGY" != "sensor" && -n "$DOMAIN" ]]; then
   step "Routing stray web traffic to the HTTP honeypot"
   cat >"$INSTALL_DIR/deploy/Caddyfile" <<'EOF'
 {
@@ -426,7 +426,7 @@ ${SITE_ADDRESS} {
 EOF
 fi
 
-if [[ "$TOPOLOGY" != "tower" ]]; then
+if [[ "$TOPOLOGY" != "hive" ]]; then
   CURRENT_PORTS="$(
     sshd -T -C "user=root,host=$(hostname),addr=127.0.0.1" |
       awk '$1 == "port" { print $2 }' |
@@ -434,7 +434,7 @@ if [[ "$TOPOLOGY" != "tower" ]]; then
   )"
   if [[ "$CURRENT_PORTS" != "$SSH_PORT" ]]; then
     step "Moving the real SSH service to port ${SSH_PORT}"
-    SSH_BACKUP="/var/backups/honey-spire-ssh-$(date +%Y%m%d%H%M%S)"
+    SSH_BACKUP="/var/backups/neonhive-ssh-$(date +%Y%m%d%H%M%S)"
     mkdir -p "$SSH_BACKUP"
     cp -a /etc/ssh/sshd_config "$SSH_BACKUP/sshd_config"
     [[ ! -d /etc/ssh/sshd_config.d ]] ||
@@ -443,19 +443,19 @@ if [[ "$TOPOLOGY" != "tower" ]]; then
       cp -a /etc/systemd/system/ssh.socket.d "$SSH_BACKUP/ssh.socket.d"
     SSH_CHANGED=1
 
-    sed -i '/^# BEGIN HONEY SPIRE$/,/^# END HONEY SPIRE$/d' /etc/ssh/sshd_config
-    sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by Honey Spire: &/' \
+    sed -i '/^# BEGIN NEONHIVE$/,/^# END NEONHIVE$/d' /etc/ssh/sshd_config
+    sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by NeonHive: &/' \
       /etc/ssh/sshd_config
     if [[ -d /etc/ssh/sshd_config.d ]]; then
       while IFS= read -r config_file; do
-        sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by Honey Spire: &/' \
+        sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by NeonHive: &/' \
           "$config_file"
       done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf')
     fi
     {
-      printf '\n# BEGIN HONEY SPIRE\n'
+      printf '\n# BEGIN NEONHIVE\n'
       printf 'Port %s\n' "$SSH_PORT"
-      printf '# END HONEY SPIRE\n'
+      printf '# END NEONHIVE\n'
     } >>/etc/ssh/sshd_config
     sshd -t
 
@@ -479,7 +479,7 @@ EOF
   fi
 fi
 
-step "Starting Honey Spire"
+step "Starting NeonHive"
 cd "$INSTALL_DIR"
 docker compose down --remove-orphans
 docker compose up -d
@@ -492,7 +492,7 @@ verify_recon_services() {
     fail "The Opencanary service honeypot did not start."
   timeout 5 bash -c '</dev/tcp/127.0.0.1/8080' ||
     fail "Opencanary HTTP is not accepting connections on port 8080."
-  if [[ "$TOPOLOGY" != "beecon" ]]; then
+  if [[ "$TOPOLOGY" != "sensor" ]]; then
     docker compose ps --status running --services | grep -qx sensor ||
       fail "The recon sensor sidecar did not start."
     docker compose exec -T sensor /usr/local/bin/shipper -healthcheck ||
@@ -501,7 +501,7 @@ verify_recon_services() {
 }
 
 case "$TOPOLOGY" in
-  tower)
+  hive)
     APP_HEALTHY=0
     for _ in {1..30}; do
       if docker compose exec -T app node -e \
@@ -512,28 +512,28 @@ case "$TOPOLOGY" in
       sleep 2
     done
     [[ "$APP_HEALTHY" -eq 1 ]] ||
-      fail "The Honey Spire application did not start."
+      fail "The NeonHive application did not start."
     docker compose ps --status running --services | grep -qx caddy ||
       fail "The dashboard proxy did not start."
     if docker compose config --services | grep -qx cowrie; then
-      fail "The tower deployment unexpectedly contains a honeypot service."
+      fail "The hive deployment unexpectedly contains a honeypot service."
     fi
     verify_recon_services
     ;;
-  beecon)
+  sensor)
     docker compose ps --status running --services | grep -qx cowrie ||
       fail "The Cowrie honeypot did not start."
     docker compose exec -T cowrie python -c \
       "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')" ||
-      fail "Cowrie started without the Honey Spire global authentication policy."
+      fail "Cowrie started without the NeonHive global authentication policy."
     docker compose port cowrie 2222 | grep -q ':22$' ||
       fail "Docker did not publish Cowrie on host port 22."
     timeout 5 bash -c '</dev/tcp/127.0.0.1/22' ||
       fail "Cowrie is running but host port 22 is not accepting connections."
     docker compose ps --status running --services | grep -qx shipper ||
-      fail "The beecon shipper did not start."
+      fail "The sensor shipper did not start."
     docker compose exec -T shipper /usr/local/bin/shipper -healthcheck ||
-      fail "The beecon shipper is not healthy."
+      fail "The sensor shipper is not healthy."
     verify_recon_services
     ;;
   *)
@@ -547,12 +547,12 @@ case "$TOPOLOGY" in
       sleep 2
     done
     [[ "$APP_HEALTHY" -eq 1 ]] ||
-      fail "The Honey Spire application did not start."
+      fail "The NeonHive application did not start."
     docker compose ps --status running --services | grep -qx cowrie ||
       fail "The Cowrie honeypot did not start."
     docker compose exec -T cowrie python -c \
       "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')" ||
-      fail "Cowrie started without the Honey Spire global authentication policy."
+      fail "Cowrie started without the NeonHive global authentication policy."
     docker compose port cowrie 2222 | grep -q ':22$' ||
       fail "Docker did not publish Cowrie on host port 22."
     timeout 5 bash -c '</dev/tcp/127.0.0.1/22' ||
@@ -565,9 +565,9 @@ esac
 
 SSH_CHANGED=0
 trap - ERR
-if [[ "$TOPOLOGY" == "beecon" ]]; then
-  printf '::result::tower=%s\n' "$TOWER_URL"
-  printf '::result::beecon_name=%s\n' "$BEECON_NAME"
+if [[ "$TOPOLOGY" == "sensor" ]]; then
+  printf '::result::hive=%s\n' "$HIVE_URL"
+  printf '::result::sensor_name=%s\n' "$SENSOR_NAME"
   printf '::result::token=%s\n' "$TOKEN_SUFFIX"
   printf '::result::ssh_host=%s\n' "$SSH_HOST"
   printf '::result::ssh_user=%s\n' "${SUDO_USER:-root}"

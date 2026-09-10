@@ -69,7 +69,7 @@ export function buildDownloadRequest(
 }
 
 export function buildTemporaryDirectoryPrefix(destination: string) {
-  return path.join(destination, ".honey-spire-update-");
+  return path.join(destination, ".neonhive-update-");
 }
 
 async function findFile(directory: string, name: string): Promise<string | null> {

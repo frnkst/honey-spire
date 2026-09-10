@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getConfig } from "@/lib/config";
-import { LOCAL_BEECON_ID, touchBeecon } from "@/lib/beecons";
+import { LOCAL_SENSOR_ID, touchSensor } from "@/lib/sensors";
 import {
   getFingerprint,
   getMetadata,
@@ -49,21 +49,21 @@ function serializeAlgorithms(record: CowrieRecord): string | null {
 }
 
 export interface IngestContext {
-  beeconId: string;
+  sensorId: string;
 }
 
 /**
  * Processes a raw Cowrie JSON record. Session ids are namespaced with the
- * beecon id (`<beeconId>:<cowrieSession>`) so events from different beecons
- * never collide; the local file tailer ingests as the built-in "local" beecon.
+ * sensor id (`<sensorId>:<cowrieSession>`) so events from different sensors
+ * never collide; the local file tailer ingests as the built-in "local" sensor.
  */
 export async function processCowrieRecord(
   record: CowrieRecord,
-  { beeconId }: IngestContext = { beeconId: LOCAL_BEECON_ID },
+  { sensorId }: IngestContext = { sensorId: LOCAL_SENSOR_ID },
 ) {
   const cowrieSession = String(record.session ?? "");
   if (!cowrieSession) return;
-  const sessionId = `${beeconId}:${cowrieSession}`;
+  const sessionId = `${sensorId}:${cowrieSession}`;
 
   if (record.eventid === "cowrie.client.version") {
     upsertFingerprint(sessionId, {
@@ -90,7 +90,7 @@ export async function processCowrieRecord(
     if (!sourceIp) return;
     const command = insertCommand({
       occurredAt: parseTimestamp(record.timestamp),
-      beeconId,
+      sensorId,
       sessionId,
       sourceIp,
       command: commandText,
@@ -115,7 +115,7 @@ export async function processCowrieRecord(
   ]);
   const attack = insertAttack({
     occurredAt: parseTimestamp(record.timestamp),
-    beeconId,
+    sensorId,
     sessionId,
     sourceIp,
     sourcePort: typeof record.src_port === "number" ? record.src_port : null,
@@ -217,7 +217,7 @@ export async function readNewCowrieEvents() {
   await tailJsonLogSource(getConfig().COWRIE_JSON_LOG, "cowrie", (record) =>
     processCowrieRecord(record),
   );
-  // Keep the built-in beecon's presence fresh for the fleet view without
+  // Keep the built-in sensor's presence fresh for the fleet view without
   // clobbering its last-seen address (there is no meaningful local IP).
-  touchBeecon(LOCAL_BEECON_ID, null, 0);
+  touchSensor(LOCAL_SENSOR_ID, null, 0);
 }

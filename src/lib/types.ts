@@ -1,7 +1,7 @@
 export interface AttackEvent {
   id: number;
   occurredAt: number;
-  beeconId: string;
+  sensorId: string;
   sessionId: string;
   sourceIp: string;
   sourcePort: number | null;
@@ -23,19 +23,19 @@ export interface AttackEvent {
 export interface CommandEvent {
   id: number;
   occurredAt: number;
-  beeconId: string;
+  sensorId: string;
   sessionId: string;
   sourceIp: string;
   username: string;
   command: string;
 }
 
-export type BeeconStatus = "pending" | "active" | "revoked";
+export type SensorStatus = "pending" | "active" | "revoked";
 
-export interface BeeconSummary {
+export interface SensorSummary {
   id: string;
   name: string;
-  status: BeeconStatus;
+  status: SensorStatus;
   version: string | null;
   createdAt: number;
   approvedAt: number | null;
@@ -50,7 +50,7 @@ export interface BeeconSummary {
 
 export interface JoinResponse {
   status: "pending" | "active";
-  beeconId: string;
+  sensorId: string;
 }
 
 export interface IngestResponse {
@@ -76,11 +76,11 @@ export interface TrendSensor {
   counts: number[];
 }
 
-/** A tower/beecon plotted on the attack origin map. */
+/** A hive/sensor plotted on the attack origin map. */
 export interface MapSensor {
   id: string;
   name: string;
-  /** True for the tower's built-in honeypot. */
+  /** True for the hive's built-in honeypot. */
   local: boolean;
   online: boolean;
   latitude: number;
@@ -97,7 +97,7 @@ export type SignalKind = "scan" | "decoy" | "http" | "service";
 export interface SignalEvent {
   id: number;
   occurredAt: number;
-  beeconId: string;
+  sensorId: string;
   kind: SignalKind;
   sourceIp: string;
   /** The attacker's ephemeral source port, when known. */

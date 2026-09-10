@@ -19,14 +19,14 @@ import {
   TrendingUp,
 } from "lucide-react";
 import {
-  BeeconJoinBanner,
-  BeeconTable,
-  beeconLabel,
+  SensorJoinBanner,
+  SensorTable,
+  sensorLabel,
   formatJoined,
   joinedAt,
-  liveBeecons,
-  useBeecons,
-} from "@/components/beecons";
+  liveSensors,
+  useSensors,
+} from "@/components/sensors";
 import {
   AttackGauge,
   AttackMap,
@@ -271,15 +271,15 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
     "idle" | "sending" | "sent" | "error"
   >("idle");
   const [telegramError, setTelegramError] = useState("");
-  const [beeconSignal, setBeeconSignal] = useState(0);
-  const [beeconBusyId, setBeeconBusyId] = useState<string | null>(null);
+  const [sensorSignal, setSensorSignal] = useState(0);
+  const [sensorBusyId, setSensorBusyId] = useState<string | null>(null);
   const {
-    beecons: fleet,
-    pending: pendingBeecons,
-    error: beeconError,
+    sensors: fleet,
+    pending: pendingSensors,
+    error: sensorError,
     approve,
     remove,
-  } = useBeecons(range, beeconSignal);
+  } = useSensors(range, sensorSignal);
 
   const refresh = useCallback(
     async (selectedRange: string) => {
@@ -314,20 +314,20 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => void refresh(range), 250);
     });
-    events.addEventListener("beecon", () => setBeeconSignal((n) => n + 1));
+    events.addEventListener("sensor", () => setSensorSignal((n) => n + 1));
     return () => {
       clearTimeout(refreshTimer);
       events.close();
     };
   }, [range, refresh]);
 
-  async function runBeeconAction(
+  async function runSensorAction(
     action: (id: string) => Promise<boolean>,
     id: string,
   ) {
-    setBeeconBusyId(id);
+    setSensorBusyId(id);
     await action(id);
-    setBeeconBusyId(null);
+    setSensorBusyId(null);
   }
 
   async function logout() {
@@ -358,9 +358,9 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
 
   const delta = data.currentRate - data.previousRate;
 
-  const liveFleet = liveBeecons(fleet);
+  const liveFleet = liveSensors(fleet);
   const activeFleet = (fleet ?? []).filter(
-    (beecon) => beecon.status === "active",
+    (sensor) => sensor.status === "active",
   );
   const updatedAt = `Updated ${new Date(data.generatedAt).toLocaleTimeString()}`;
   const uplinkValue = !fleet
@@ -369,17 +369,17 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
       ? `${liveFleet.length} LIVE`
       : "SYNC";
   const uplinkDetail = !fleet
-    ? "Syncing the beecon fleet…"
+    ? "Syncing the sensor fleet…"
     : !connected
       ? `Stream reconnecting · ${updatedAt}`
       : liveFleet.length
-        ? `${liveFleet.length}/${activeFleet.length} beecons live · ${liveFleet
+        ? `${liveFleet.length}/${activeFleet.length} sensors live · ${liveFleet
             .map(
-              (beecon) =>
-                `${beeconLabel(beecon)} (since ${formatJoined(joinedAt(beecon))})`,
+              (sensor) =>
+                `${sensorLabel(sensor)} (since ${formatJoined(joinedAt(sensor))})`,
             )
             .join(" · ")}`
-        : `0/${activeFleet.length} beecons live · ${updatedAt}`;
+        : `0/${activeFleet.length} sensors live · ${updatedAt}`;
 
   return (
     <main className="threat-field min-h-screen">
@@ -477,11 +477,11 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           </div>
         </section>
 
-        <BeeconJoinBanner
-          busyId={beeconBusyId}
-          onApprove={(id) => void runBeeconAction(approve, id)}
-          onDeny={(id) => void runBeeconAction(remove, id)}
-          pending={pendingBeecons}
+        <SensorJoinBanner
+          busyId={sensorBusyId}
+          onApprove={(id) => void runSensorAction(approve, id)}
+          onDeny={(id) => void runSensorAction(remove, id)}
+          pending={pendingSensors}
         />
 
         <section className="reveal reveal-delay-1 mb-12">
@@ -603,7 +603,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
                 >
                   <path d="M5 0 10 9H0Z" />
                 </svg>
-                Tower / beecon
+                Hive / sensor
               </span>
               <span className="data-label flex items-center gap-1.5">
                 <span className="size-2 rounded-full bg-primary shadow-[0_0_6px_rgba(255,194,71,.8)]" />
@@ -922,23 +922,23 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           <SectionHeading
             detail={
               fleet
-                ? `${liveBeecons(fleet).length} of ${fleet.length} beecons online`
+                ? `${liveSensors(fleet).length} of ${fleet.length} sensors online`
                 : "Fleet telemetry"
             }
             index="G / FLEET"
-            title="Beecon fleet"
+            title="Sensor fleet"
           />
-          <BeeconTable
-            beecons={fleet}
-            busyId={beeconBusyId}
-            error={beeconError}
-            onApprove={(id) => void runBeeconAction(approve, id)}
-            onRemove={(id) => void runBeeconAction(remove, id)}
+          <SensorTable
+            sensors={fleet}
+            busyId={sensorBusyId}
+            error={sensorError}
+            onApprove={(id) => void runSensorAction(approve, id)}
+            onRemove={(id) => void runSensorAction(remove, id)}
           />
         </section>
 
         <footer className="mt-12 flex flex-col gap-3 border-t border-white/[.07] py-6 text-[10px] uppercase tracking-[.14em] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span>Honey Spire / passive SSH observation node</span>
+          <span>NeonHive / passive threat observation</span>
           <span>Geolocation intelligence by GeoLite2</span>
         </footer>
       </div>

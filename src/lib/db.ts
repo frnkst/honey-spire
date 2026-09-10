@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { getConfig } from "@/lib/config";
 import type {
   AttackEvent,
-  BeeconSummary,
+  SensorSummary,
   CommandEvent,
   DashboardData,
   RankedValue,
@@ -18,7 +18,7 @@ function rowToAttack(row: Record<string, unknown>): AttackEvent {
   return {
     id: Number(row.id),
     occurredAt: Number(row.occurred_at),
-    beeconId: String(row.beecon_id ?? "local"),
+    sensorId: String(row.sensor_id ?? "local"),
     sessionId: String(row.session_id),
     sourceIp: String(row.source_ip),
     sourcePort: row.source_port === null ? null : Number(row.source_port),
@@ -42,7 +42,7 @@ function rowToCommand(row: Record<string, unknown>): CommandEvent {
   return {
     id: Number(row.id),
     occurredAt: Number(row.occurred_at),
-    beeconId: String(row.beecon_id ?? "local"),
+    sensorId: String(row.sensor_id ?? "local"),
     sessionId: String(row.session_id),
     sourceIp: String(row.source_ip),
     username: String(row.username),
@@ -55,7 +55,7 @@ function rowToSignal(row: Record<string, unknown>): SignalEvent {
   return {
     id: Number(row.id),
     occurredAt: Number(row.occurred_at),
-    beeconId: String(row.beecon_id ?? "local"),
+    sensorId: String(row.sensor_id ?? "local"),
     kind: String(row.kind) as SignalEvent["kind"],
     sourceIp: String(row.source_ip),
     sourcePort: row.source_port === null ? null : Number(row.source_port),
@@ -74,6 +74,40 @@ function rowToSignal(row: Record<string, unknown>): SignalEvent {
   };
 }
 
+/**
+ * honey-spire named the fleet table "beecons" and its foreign key
+ * "beecon_id"; rename them in place so existing databases keep their data.
+ * SQLite rewrites the child tables' REFERENCES clauses when the fleet table
+ * is renamed, and column renames update index definitions — only the old
+ * index *names* need dropping so the schema below recreates them renamed.
+ */
+function migrateLegacySensorSchema(db: Database.Database) {
+  const tables = (
+    db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table' AND name IN ('beecons', 'sensors')`,
+      )
+      .all() as { name: string }[]
+  ).map((row) => row.name);
+  if (!tables.includes("beecons")) return;
+
+  if (!tables.includes("sensors")) {
+    db.exec(`ALTER TABLE beecons RENAME TO sensors`);
+  }
+  for (const table of ["attacks", "command_events", "signal_events"]) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as {
+      name: string;
+    }[];
+    if (columns.some((column) => column.name === "beecon_id")) {
+      db.exec(`ALTER TABLE ${table} RENAME COLUMN beecon_id TO sensor_id`);
+    }
+  }
+  for (const index of ["attacks_beecon_idx", "command_events_beecon_idx"]) {
+    db.exec(`DROP INDEX IF EXISTS ${index}`);
+  }
+}
+
 export function getDatabase(): Database.Database {
   if (database) return database;
 
@@ -85,8 +119,9 @@ export function getDatabase(): Database.Database {
   database.pragma("busy_timeout = 5000");
   database.pragma("foreign_keys = ON");
   database.pragma("cache_size = -8192");
+  migrateLegacySensorSchema(database);
   database.exec(`
-    CREATE TABLE IF NOT EXISTS beecons (
+    CREATE TABLE IF NOT EXISTS sensors (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       token_hash TEXT UNIQUE,
@@ -104,7 +139,7 @@ export function getDatabase(): Database.Database {
     CREATE TABLE IF NOT EXISTS attacks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       occurred_at INTEGER NOT NULL,
-      beecon_id TEXT REFERENCES beecons(id),
+      sensor_id TEXT REFERENCES sensors(id),
       session_id TEXT NOT NULL,
       source_ip TEXT NOT NULL,
       source_port INTEGER,
@@ -129,13 +164,13 @@ export function getDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS attacks_source_ip_idx ON attacks(source_ip, occurred_at);
     CREATE INDEX IF NOT EXISTS attacks_username_idx ON attacks(username, occurred_at);
     CREATE INDEX IF NOT EXISTS attacks_password_idx ON attacks(password, occurred_at);
-    CREATE INDEX IF NOT EXISTS attacks_beecon_idx
-      ON attacks(beecon_id, occurred_at);
+    CREATE INDEX IF NOT EXISTS attacks_sensor_idx
+      ON attacks(sensor_id, occurred_at);
 
     CREATE TABLE IF NOT EXISTS command_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       occurred_at INTEGER NOT NULL,
-      beecon_id TEXT REFERENCES beecons(id),
+      sensor_id TEXT REFERENCES sensors(id),
       session_id TEXT NOT NULL,
       source_ip TEXT NOT NULL,
       command TEXT NOT NULL,
@@ -145,8 +180,8 @@ export function getDatabase(): Database.Database {
       ON command_events(occurred_at);
     CREATE INDEX IF NOT EXISTS command_events_session_id_idx
       ON command_events(session_id, occurred_at);
-    CREATE INDEX IF NOT EXISTS command_events_beecon_idx
-      ON command_events(beecon_id, occurred_at);
+    CREATE INDEX IF NOT EXISTS command_events_sensor_idx
+      ON command_events(sensor_id, occurred_at);
 
     CREATE TABLE IF NOT EXISTS minute_stats (
       bucket INTEGER PRIMARY KEY,
@@ -156,7 +191,7 @@ export function getDatabase(): Database.Database {
     CREATE TABLE IF NOT EXISTS signal_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       occurred_at INTEGER NOT NULL,
-      beecon_id TEXT REFERENCES beecons(id),
+      sensor_id TEXT REFERENCES sensors(id),
       kind TEXT NOT NULL,
       source_ip TEXT NOT NULL,
       source_port INTEGER,
@@ -203,10 +238,10 @@ export function getDatabase(): Database.Database {
     );
   `);
 
-  // The built-in beecon represents this server's local honeypot (full mode).
+  // The built-in sensor represents this server's local honeypot (full mode).
   database
     .prepare(
-      `INSERT INTO beecons (id, name, token_hash, status, created_at, approved_at)
+      `INSERT INTO sensors (id, name, token_hash, status, created_at, approved_at)
        VALUES ('local', 'local', NULL, 'active', ?, ?)
        ON CONFLICT(id) DO NOTHING`,
     )
@@ -266,12 +301,12 @@ export function insertAttack(
     const result = db
       .prepare(
         `INSERT OR IGNORE INTO attacks (
-          occurred_at, beecon_id, session_id, source_ip, source_port,
+          occurred_at, sensor_id, session_id, source_ip, source_port,
           username, password, country_code, country_name, city, latitude,
           longitude, asn, organization, client_version, hassh, algorithms,
           successful
         ) VALUES (
-          @occurredAt, @beeconId, @sessionId, @sourceIp, @sourcePort,
+          @occurredAt, @sensorId, @sessionId, @sourceIp, @sourcePort,
           @username, @password, @countryCode, @countryName, @city, @latitude,
           @longitude, @asn, @organization, @clientVersion, @hassh,
           @algorithms, @successful
@@ -309,8 +344,8 @@ export function insertCommand(
   const result = getDatabase()
     .prepare(
       `INSERT OR IGNORE INTO command_events
-        (occurred_at, beecon_id, session_id, source_ip, command)
-       SELECT @occurredAt, @beeconId, @sessionId, @sourceIp, @command
+        (occurred_at, sensor_id, session_id, source_ip, command)
+       SELECT @occurredAt, @sensorId, @sessionId, @sourceIp, @command
        WHERE (
          SELECT COUNT(*) FROM command_events WHERE session_id = @sessionId
        ) < 10`,
@@ -333,11 +368,11 @@ export function insertSignal(
     const result = db
       .prepare(
         `INSERT OR IGNORE INTO signal_events (
-          occurred_at, beecon_id, kind, source_ip, source_port, protocol,
+          occurred_at, sensor_id, kind, source_ip, source_port, protocol,
           scan_type, port, ports, summary, detail, country_code, country_name,
           city, latitude, longitude, asn, organization
         ) VALUES (
-          @occurredAt, @beeconId, @kind, @sourceIp, @sourcePort, @protocol,
+          @occurredAt, @sensorId, @kind, @sourceIp, @sourcePort, @protocol,
           @scanType, @port, @ports, @summary, @detail, @countryCode, @countryName,
           @city, @latitude, @longitude, @asn, @organization
         )`,
@@ -371,18 +406,18 @@ const rangeMilliseconds: Record<string, number> = {
 function topValues(
   column: "source_ip" | "username" | "password",
   since: number,
-  beeconId?: string,
+  sensorId?: string,
 ): RankedValue[] {
   return getDatabase()
     .prepare(
       `SELECT ${column} AS value, COUNT(*) AS count
        FROM attacks
-       WHERE occurred_at >= ?${beeconId ? " AND beecon_id = ?" : ""}
+       WHERE occurred_at >= ?${sensorId ? " AND sensor_id = ?" : ""}
        GROUP BY ${column}
        ORDER BY count DESC, value ASC
        LIMIT 20`,
     )
-    .all(...(beeconId ? [since, beeconId] : [since]))
+    .all(...(sensorId ? [since, sensorId] : [since]))
     .map((row) => {
       const typed = row as { value: string; count: number };
       return { value: typed.value, count: Number(typed.count) };
@@ -391,7 +426,7 @@ function topValues(
 
 export function getDashboardData(
   range = "24h",
-  beeconId?: string,
+  sensorId?: string,
 ): Omit<DashboardData, "sensors"> {
   const db = getDatabase();
   const normalizedRange = range in rangeMilliseconds ? range : "24h";
@@ -421,10 +456,10 @@ export function getDashboardData(
   const recentRows = db
     .prepare(
       `SELECT * FROM attacks
-       ${beeconId ? "WHERE beecon_id = ?" : ""}
+       ${sensorId ? "WHERE sensor_id = ?" : ""}
        ORDER BY occurred_at DESC LIMIT 20`,
     )
-    .all(...(beeconId ? [beeconId] : [])) as Record<string, unknown>[];
+    .all(...(sensorId ? [sensorId] : [])) as Record<string, unknown>[];
   const commandRows = db
     .prepare(
       `SELECT
@@ -437,27 +472,27 @@ export function getDashboardData(
           LIMIT 1
         ), '') AS username
        FROM command_events c
-       ${beeconId ? "WHERE c.beecon_id = ?" : ""}
+       ${sensorId ? "WHERE c.sensor_id = ?" : ""}
        ORDER BY c.occurred_at DESC
        LIMIT 200`,
     )
-    .all(...(beeconId ? [beeconId] : [])) as Record<string, unknown>[];
+    .all(...(sensorId ? [sensorId] : [])) as Record<string, unknown>[];
   const mapRows = db
     .prepare(
       `SELECT * FROM attacks
-       WHERE occurred_at >= ? AND latitude IS NOT NULL AND longitude IS NOT NULL${beeconId ? " AND beecon_id = ?" : ""}
+       WHERE occurred_at >= ? AND latitude IS NOT NULL AND longitude IS NOT NULL${sensorId ? " AND sensor_id = ?" : ""}
        ORDER BY occurred_at DESC LIMIT 200`,
     )
-    .all(...(beeconId ? [since, beeconId] : [since])) as Record<
+    .all(...(sensorId ? [since, sensorId] : [since])) as Record<
     string,
     unknown
   >[];
   const total = db
     .prepare(
       `SELECT COUNT(*) AS count FROM attacks
-       WHERE occurred_at >= ?${beeconId ? " AND beecon_id = ?" : ""}`,
+       WHERE occurred_at >= ?${sensorId ? " AND sensor_id = ?" : ""}`,
     )
-    .get(...(beeconId ? [since, beeconId] : [since])) as { count: number };
+    .get(...(sensorId ? [since, sensorId] : [since])) as { count: number };
   const peak = db
     .prepare(
       `SELECT COALESCE(MAX(attack_count), 0) AS count
@@ -475,19 +510,19 @@ export function getDashboardData(
   // Per-sensor breakdown over the same bucket grid, for stacked bars.
   const sensorRows = db
     .prepare(
-      `SELECT COALESCE(beecon_id, 'other') AS id,
+      `SELECT COALESCE(sensor_id, 'other') AS id,
                 occurred_at - (occurred_at % @bucketSize) AS bucket,
                 COUNT(*) AS count
          FROM attacks
          WHERE occurred_at >= @since AND occurred_at < @now
-               ${beeconId ? "AND beecon_id = @beeconId" : ""}
+               ${sensorId ? "AND sensor_id = @sensorId" : ""}
          GROUP BY id, bucket`,
     )
     .all({
       bucketSize,
       since,
       now,
-      ...(beeconId ? { beeconId } : {}),
+      ...(sensorId ? { sensorId } : {}),
     }) as {
     id: string;
     bucket: number;
@@ -496,10 +531,10 @@ export function getDashboardData(
   const bucketIndex = new Map(
     trend.map((point, index) => [point.timestamp, index]),
   );
-  const beeconNames = new Map(
+  const sensorNames = new Map(
     (
       db
-        .prepare(`SELECT id, name FROM beecons ORDER BY created_at ASC, id ASC`)
+        .prepare(`SELECT id, name FROM sensors ORDER BY created_at ASC, id ASC`)
         .all() as { id: string; name: string }[]
     ).map((row) => [row.id, row.name]),
   );
@@ -516,7 +551,7 @@ export function getDashboardData(
   }
   const sensorOrder = [
     "local",
-    ...[...beeconNames.keys()].filter((id) => id !== "local"),
+    ...[...sensorNames.keys()].filter((id) => id !== "local"),
     "other",
   ];
   const trendSensors: TrendSensor[] = [...sensorCounts.entries()]
@@ -524,8 +559,8 @@ export function getDashboardData(
       id,
       name:
         id === "local"
-          ? "Tower"
-          : (beeconNames.get(id) ?? (id === "other" ? "Unknown" : id)),
+          ? "Hive"
+          : (sensorNames.get(id) ?? (id === "other" ? "Unknown" : id)),
       counts,
     }))
     .sort(
@@ -592,9 +627,9 @@ export function getDashboardData(
     gaugeMaximum: Math.max(10, Number(peak.count)),
     trend,
     trendSensors,
-    topIps: topValues("source_ip", since, beeconId),
-    topUsernames: topValues("username", since, beeconId),
-    topPasswords: topValues("password", since, beeconId),
+    topIps: topValues("source_ip", since, sensorId),
+    topUsernames: topValues("username", since, sensorId),
+    topPasswords: topValues("password", since, sensorId),
     recentCommands: commandRows.map(rowToCommand),
     recentAttacks: recentRows.map(rowToAttack),
     mapAttacks: mapRows.map(rowToAttack),
@@ -652,7 +687,7 @@ export function rangeToMilliseconds(range: string): number {
   return rangeMilliseconds[range] ?? 0;
 }
 
-export function getBeeconSummaries(since = 0): Omit<BeeconSummary, "online">[] {
+export function getSensorSummaries(since = 0): Omit<SensorSummary, "online">[] {
   return (
     getDatabase()
       .prepare(
@@ -662,13 +697,13 @@ export function getBeeconSummaries(since = 0): Omit<BeeconSummary, "online">[] {
           b.last_seen_at AS lastSeenAt, b.last_seen_ip AS lastSeenIp,
           b.events_received AS eventsReceived,
           (SELECT COUNT(*) FROM attacks a
-            WHERE a.beecon_id = b.id AND a.occurred_at >= ?) AS attacks,
+            WHERE a.sensor_id = b.id AND a.occurred_at >= ?) AS attacks,
           (SELECT COUNT(*) FROM command_events c
-            WHERE c.beecon_id = b.id AND c.occurred_at >= ?) AS commands
-         FROM beecons b
+            WHERE c.sensor_id = b.id AND c.occurred_at >= ?) AS commands
+         FROM sensors b
          ORDER BY b.created_at ASC, b.id ASC`,
       )
-      .all(since, since) as Omit<BeeconSummary, "online">[]
+      .all(since, since) as Omit<SensorSummary, "online">[]
   ).map((summary) => ({
     ...summary,
     createdAt: Number(summary.createdAt),

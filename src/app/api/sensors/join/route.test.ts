@@ -4,19 +4,19 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { POST } from "@/app/api/beecons/join/route";
-import { approveBeecon, revokeBeecon } from "@/lib/beecons";
+import { POST } from "@/app/api/sensors/join/route";
+import { approveSensor, revokeSensor } from "@/lib/sensors";
 
 beforeAll(() => {
   const directory = fs.mkdtempSync(
-    path.join(os.tmpdir(), "honey-spire-join-route-"),
+    path.join(os.tmpdir(), "neonhive-join-route-"),
   );
   process.env.DATABASE_PATH = path.join(directory, "test.db");
   process.env.GEOLITE_DIR = path.join(directory, "geolite");
 });
 
 function joinRequest(body: unknown, headers: Record<string, string> = {}) {
-  return new NextRequest("http://localhost/api/beecons/join", {
+  return new NextRequest("http://localhost/api/sensors/join", {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -32,27 +32,27 @@ function joinBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("POST /api/beecons/join", () => {
-  it("registers a new beecon as pending", async () => {
+describe("POST /api/sensors/join", () => {
+  it("registers a new sensor as pending", async () => {
     const body = joinBody();
     const response = await POST(joinRequest(body));
     expect(response.status).toBe(200);
     const payload = (await response.json()) as {
       status: string;
-      beeconId: string;
+      sensorId: string;
     };
     expect(payload.status).toBe("pending");
-    expect(payload.beeconId).toMatch(/^bc_[0-9a-f]{12}$/);
+    expect(payload.sensorId).toMatch(/^sns_[0-9a-f]{12}$/);
   });
 
-  it("reports active once the beecon is approved", async () => {
+  it("reports active once the sensor is approved", async () => {
     const body = joinBody();
     const first = await POST(joinRequest(body));
-    const { beeconId } = (await first.json()) as { beeconId: string };
-    expect(approveBeecon(beeconId)).toBe(true);
+    const { sensorId } = (await first.json()) as { sensorId: string };
+    expect(approveSensor(sensorId)).toBe(true);
 
     const second = await POST(joinRequest(body));
-    expect(await second.json()).toMatchObject({ status: "active", beeconId });
+    expect(await second.json()).toMatchObject({ status: "active", sensorId });
   });
 
   it("rejects malformed requests", async () => {
@@ -68,8 +68,8 @@ describe("POST /api/beecons/join", () => {
   it("signals removal for revoked tokens", async () => {
     const body = joinBody();
     const first = await POST(joinRequest(body));
-    const { beeconId } = (await first.json()) as { beeconId: string };
-    expect(revokeBeecon(beeconId)).toBe(true);
+    const { sensorId } = (await first.json()) as { sensorId: string };
+    expect(revokeSensor(sensorId)).toBe(true);
 
     const response = await POST(joinRequest(body));
     expect(response.status).toBe(403);

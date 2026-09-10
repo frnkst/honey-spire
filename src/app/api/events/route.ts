@@ -2,7 +2,7 @@ import { isAuthenticated } from "@/lib/auth";
 import { liveEvents } from "@/lib/live-events";
 import type {
   AttackEvent,
-  BeeconSummary,
+  SensorSummary,
   CommandEvent,
   SignalEvent,
 } from "@/lib/types";
@@ -32,9 +32,9 @@ export async function GET(request: Request) {
           ),
         );
       };
-      const sendBeecon = (beecon: BeeconSummary) => {
+      const sendSensor = (sensor: SensorSummary) => {
         controller.enqueue(
-          encoder.encode(`event: beecon\ndata: ${JSON.stringify(beecon)}\n\n`),
+          encoder.encode(`event: sensor\ndata: ${JSON.stringify(sensor)}\n\n`),
         );
       };
       const sendSignal = (signal: SignalEvent) => {
@@ -47,13 +47,13 @@ export async function GET(request: Request) {
       }, 20_000);
       liveEvents.on("attack", sendAttack);
       liveEvents.on("command", sendCommand);
-      liveEvents.on("beecon", sendBeecon);
+      liveEvents.on("sensor", sendSensor);
       liveEvents.on("signal", sendSignal);
       cleanup = () => {
         clearInterval(heartbeat);
         liveEvents.off("attack", sendAttack);
         liveEvents.off("command", sendCommand);
-        liveEvents.off("beecon", sendBeecon);
+        liveEvents.off("sensor", sendSensor);
         liveEvents.off("signal", sendSignal);
       };
       request.signal.addEventListener("abort", cleanup, { once: true });

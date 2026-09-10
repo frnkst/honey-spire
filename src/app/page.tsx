@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Dashboard } from "@/components/dashboard";
 import { isAuthenticated } from "@/lib/auth";
-import { getMapSensors } from "@/lib/beecons";
+import { getMapSensors } from "@/lib/sensors";
 import { getDashboardData } from "@/lib/db";
 
 export const dynamic = "force-dynamic";

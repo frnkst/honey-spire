@@ -1,18 +1,18 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { getBeeconSummaries, getDatabase } from "@/lib/db";
+import { getSensorSummaries, getDatabase } from "@/lib/db";
 import { geolocateIp } from "@/lib/geolocation";
-import type { BeeconStatus, BeeconSummary, MapSensor } from "@/lib/types";
+import type { SensorStatus, SensorSummary, MapSensor } from "@/lib/types";
 
-export const LOCAL_BEECON_ID = "local";
-export const BEECON_OFFLINE_AFTER_MS = 15 * 60_000;
-export const MAX_PENDING_BEECONS = 25;
+export const LOCAL_SENSOR_ID = "local";
+export const SENSOR_OFFLINE_AFTER_MS = 15 * 60_000;
+export const MAX_PENDING_SENSORS = 25;
 
-export interface BeeconRow {
+export interface SensorRow {
   id: string;
   name: string;
   token_hash: string | null;
-  status: BeeconStatus;
+  status: SensorStatus;
   version: string | null;
   created_at: number;
   approved_at: number | null;
@@ -22,15 +22,15 @@ export interface BeeconRow {
   events_received: number;
 }
 
-export class BeeconLimitError extends Error {
+export class SensorLimitError extends Error {
   constructor() {
-    super("Too many pending beecons.");
-    this.name = "BeeconLimitError";
+    super("Too many pending sensors.");
+    this.name = "SensorLimitError";
   }
 }
 
-export type BeeconAuthResult =
-  | { ok: true; beecon: BeeconRow }
+export type SensorAuthResult =
+  | { ok: true; sensor: SensorRow }
   | {
       ok: false;
       status: 401 | 403;
@@ -42,8 +42,8 @@ export function hashToken(token: string) {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
-export function generateBeeconId() {
-  return `bc_${randomBytes(6).toString("hex")}`;
+export function generateSensorId() {
+  return `sns_${randomBytes(6).toString("hex")}`;
 }
 
 export interface JoinInput {
@@ -54,32 +54,32 @@ export interface JoinInput {
 }
 
 /**
- * Joins a beecon by bearer token. Idempotent: re-joining with the same token
+ * Joins a sensor by bearer token. Idempotent: re-joining with the same token
  * refreshes the display name, advertised version, and last-seen marker.
  */
 export function registerJoin({ name, token, version, ip }: JoinInput): {
-  status: BeeconStatus;
-  beeconId: string;
+  status: SensorStatus;
+  sensorId: string;
 } {
   const db = getDatabase();
   const tokenHash = hashToken(token);
   const now = Date.now();
   const existing = db
-    .prepare(`SELECT id, status FROM beecons WHERE token_hash = ?`)
-    .get(tokenHash) as { id: string; status: BeeconStatus } | undefined;
+    .prepare(`SELECT id, status FROM sensors WHERE token_hash = ?`)
+    .get(tokenHash) as { id: string; status: SensorStatus } | undefined;
   if (existing) {
     if (existing.status === "revoked") {
-      return { status: "revoked", beeconId: existing.id };
+      return { status: "revoked", sensorId: existing.id };
     }
     db.prepare(
-      `UPDATE beecons
+      `UPDATE sensors
        SET name = ?, version = COALESCE(?, version),
            last_seen_at = ?, last_seen_ip = ?
        WHERE id = ?`,
     ).run(name, version ?? null, now, ip, existing.id);
     return {
       status: existing.status === "active" ? "active" : "pending",
-      beeconId: existing.id,
+      sensorId: existing.id,
     };
   }
 
@@ -87,49 +87,49 @@ export function registerJoin({ name, token, version, ip }: JoinInput): {
     (
       db
         .prepare(
-          `SELECT COUNT(*) AS count FROM beecons WHERE status = 'pending'`,
+          `SELECT COUNT(*) AS count FROM sensors WHERE status = 'pending'`,
         )
         .get() as { count: number } | undefined
     )?.count ?? 0,
   );
-  if (pending >= MAX_PENDING_BEECONS) throw new BeeconLimitError();
+  if (pending >= MAX_PENDING_SENSORS) throw new SensorLimitError();
 
-  const beeconId = generateBeeconId();
+  const sensorId = generateSensorId();
   db.prepare(
-    `INSERT INTO beecons
+    `INSERT INTO sensors
       (id, name, token_hash, status, version, created_at, last_seen_at, last_seen_ip)
      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
-  ).run(beeconId, name, tokenHash, version ?? null, now, now, ip);
-  return { status: "pending", beeconId };
+  ).run(sensorId, name, tokenHash, version ?? null, now, now, ip);
+  return { status: "pending", sensorId };
 }
 
-export function approveBeecon(id: string) {
+export function approveSensor(id: string) {
   return (
     getDatabase()
       .prepare(
-        `UPDATE beecons SET status = 'active', approved_at = ?, revoked_at = NULL
+        `UPDATE sensors SET status = 'active', approved_at = ?, revoked_at = NULL
          WHERE id = ? AND status = 'pending'`,
       )
       .run(Date.now(), id).changes > 0
   );
 }
 
-export function revokeBeecon(id: string) {
-  if (id === LOCAL_BEECON_ID) return false;
+export function revokeSensor(id: string) {
+  if (id === LOCAL_SENSOR_ID) return false;
   return (
     getDatabase()
       .prepare(
-        `UPDATE beecons SET status = 'revoked', revoked_at = ?
+        `UPDATE sensors SET status = 'revoked', revoked_at = ?
          WHERE id = ? AND status != 'revoked'`,
       )
       .run(Date.now(), id).changes > 0
   );
 }
 
-export function touchBeecon(id: string, ip: string | null, events: number) {
+export function touchSensor(id: string, ip: string | null, events: number) {
   getDatabase()
     .prepare(
-      `UPDATE beecons
+      `UPDATE sensors
        SET last_seen_at = ?,
            last_seen_ip = COALESCE(?, last_seen_ip),
            events_received = events_received + ?
@@ -138,42 +138,42 @@ export function touchBeecon(id: string, ip: string | null, events: number) {
     .run(Date.now(), ip, events, id);
 }
 
-function withOnline(summary: Omit<BeeconSummary, "online">): BeeconSummary {
+function withOnline(summary: Omit<SensorSummary, "online">): SensorSummary {
   return {
     ...summary,
     online:
       summary.status === "active" &&
       summary.lastSeenAt !== null &&
-      Date.now() - summary.lastSeenAt < BEECON_OFFLINE_AFTER_MS,
+      Date.now() - summary.lastSeenAt < SENSOR_OFFLINE_AFTER_MS,
   };
 }
 
-export function getBeeconSummary(id: string): BeeconSummary | undefined {
-  const summary = getBeeconSummaries(0).find((beecon) => beecon.id === id);
+export function getSensorSummary(id: string): SensorSummary | undefined {
+  const summary = getSensorSummaries(0).find((sensor) => sensor.id === id);
   return summary ? withOnline(summary) : undefined;
 }
 
-export function listBeecons(since = 0): BeeconSummary[] {
-  return getBeeconSummaries(since).map(withOnline);
+export function listSensors(since = 0): SensorSummary[] {
+  return getSensorSummaries(since).map(withOnline);
 }
 
 /**
  * Geolocates every active sensor's last-seen IP so the dashboard map can plot
- * the tower and its beecons. Sensors without a usable location are omitted.
+ * the hive and its sensors. Sensors without a usable location are omitted.
  */
 export async function getMapSensors(): Promise<MapSensor[]> {
   const sensors = await Promise.all(
-    getBeeconSummaries(0)
+    getSensorSummaries(0)
       .map(withOnline)
-      .filter((beecon) => beecon.status === "active" && beecon.lastSeenIp)
-      .map(async (beecon): Promise<MapSensor | null> => {
-        const geo = await geolocateIp(beecon.lastSeenIp as string);
+      .filter((sensor) => sensor.status === "active" && sensor.lastSeenIp)
+      .map(async (sensor): Promise<MapSensor | null> => {
+        const geo = await geolocateIp(sensor.lastSeenIp as string);
         if (geo.latitude === null || geo.longitude === null) return null;
         return {
-          id: beecon.id,
-          name: beecon.name,
-          local: beecon.id === LOCAL_BEECON_ID,
-          online: beecon.online,
+          id: sensor.id,
+          name: sensor.name,
+          local: sensor.id === LOCAL_SENSOR_ID,
+          online: sensor.online,
           latitude: geo.latitude,
           longitude: geo.longitude,
           location:
@@ -185,10 +185,10 @@ export async function getMapSensors(): Promise<MapSensor[]> {
 }
 
 /**
- * Authenticates a beecon via `Authorization: Bearer <token>`. The token is
- * generated by the beecon at install time and stored hashed on the tower.
+ * Authenticates a sensor via `Authorization: Bearer <token>`. The token is
+ * generated by the sensor at install time and stored hashed on the hive.
  */
-export function authenticateBeecon(request: NextRequest): BeeconAuthResult {
+export function authenticateSensor(request: NextRequest): SensorAuthResult {
   const header = request.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   if (!match) {
@@ -199,32 +199,32 @@ export function authenticateBeecon(request: NextRequest): BeeconAuthResult {
       error: "Missing bearer token.",
     };
   }
-  const beecon = getDatabase()
-    .prepare(`SELECT * FROM beecons WHERE token_hash = ?`)
-    .get(hashToken(match[1])) as BeeconRow | undefined;
-  if (!beecon) {
+  const sensor = getDatabase()
+    .prepare(`SELECT * FROM sensors WHERE token_hash = ?`)
+    .get(hashToken(match[1])) as SensorRow | undefined;
+  if (!sensor) {
     return {
       ok: false,
       status: 401,
       code: "unknown_token",
-      error: "Unknown beecon token.",
+      error: "Unknown sensor token.",
     };
   }
-  if (beecon.status === "pending") {
+  if (sensor.status === "pending") {
     return {
       ok: false,
       status: 403,
       code: "pending",
-      error: "Beecon is awaiting approval.",
+      error: "Sensor is awaiting approval.",
     };
   }
-  if (beecon.status === "revoked") {
+  if (sensor.status === "revoked") {
     return {
       ok: false,
       status: 403,
       code: "revoked",
-      error: "Beecon has been removed.",
+      error: "Sensor has been removed.",
     };
   }
-  return { ok: true, beecon };
+  return { ok: true, sensor };
 }

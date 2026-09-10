@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
-import { listBeecons } from "@/lib/beecons";
+import { listSensors } from "@/lib/sensors";
 import { rangeToMilliseconds } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -14,11 +14,11 @@ export async function GET(request: NextRequest) {
   const requested = request.nextUrl.searchParams.get("range") ?? "24h";
   const range = RANGES.includes(requested) ? requested : "24h";
   const since = range === "all" ? 0 : Date.now() - rangeToMilliseconds(range);
-  const beecons = listBeecons(since);
+  const sensors = listSensors(since);
   return NextResponse.json(
     {
-      beecons,
-      pendingCount: beecons.filter((beecon) => beecon.status === "pending")
+      sensors,
+      pendingCount: sensors.filter((sensor) => sensor.status === "pending")
         .length,
     },
     { headers: { "cache-control": "no-store" } },

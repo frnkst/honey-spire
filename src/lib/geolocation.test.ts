@@ -18,7 +18,7 @@ describe("geolocateIp", () => {
 
   it("continues without enrichment when GeoLite databases are invalid", async () => {
     const directory = fs.mkdtempSync(
-      path.join(os.tmpdir(), "honey-spire-geolocation-"),
+      path.join(os.tmpdir(), "neonhive-geolocation-"),
     );
     process.env.GEOLITE_DIR = directory;
     fs.writeFileSync(path.join(directory, "GeoLite2-City.mmdb"), "invalid");

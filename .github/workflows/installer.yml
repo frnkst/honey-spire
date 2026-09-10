@@ -31,13 +31,13 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
             -trimpath -ldflags="-s -w" \
-            -o dist/honey-spire-installer-linux-amd64 ./cmd/installer
+            -o dist/neonhive-installer-linux-amd64 ./cmd/installer
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
             -trimpath -ldflags="-s -w" \
-            -o dist/honey-spire-installer-linux-arm64 ./cmd/installer
+            -o dist/neonhive-installer-linux-arm64 ./cmd/installer
           (
             cd dist
-            sha256sum honey-spire-installer-linux-* > checksums.txt
+            sha256sum neonhive-installer-linux-* > checksums.txt
           )
       - name: Publish installer assets
         env:
@@ -45,10 +45,10 @@ jobs:
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             RELEASE="$GITHUB_REF_NAME"
-            TITLE="Honey Spire ${GITHUB_REF_NAME}"
+            TITLE="NeonHive ${GITHUB_REF_NAME}"
           else
             RELEASE="installer-main"
-            TITLE="Honey Spire rolling installer"
+            TITLE="NeonHive rolling installer"
             PRERELEASE="--prerelease"
           fi
           gh release view "$RELEASE" >/dev/null 2>&1 ||
@@ -56,9 +56,9 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "$TITLE" \
               ${PRERELEASE:-} \
-              --notes "Precompiled Honey Spire installer binaries for Linux."
+              --notes "Precompiled NeonHive installer binaries for Linux."
           gh release upload "$RELEASE" \
-            dist/honey-spire-installer-linux-amd64 \
-            dist/honey-spire-installer-linux-arm64 \
+            dist/neonhive-installer-linux-amd64 \
+            dist/neonhive-installer-linux-arm64 \
             --clobber
           gh release upload "$RELEASE" dist/checksums.txt --clobber

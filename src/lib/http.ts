@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 /**
- * Origin check for browser-facing mutations. Machine clients (the beecon
+ * Origin check for browser-facing mutations. Machine clients (the sensor
  * shipper) send no Origin header at all, so they can opt out of the
  * requirement — a present-but-forged Origin is still rejected.
  */

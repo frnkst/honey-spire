@@ -1,4 +1,4 @@
-module github.com/frnkst/honey-spire
+module github.com/frnkst/neonhive
 
 go 1.24.0
 

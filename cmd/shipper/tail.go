@@ -28,7 +28,7 @@ type line struct {
 }
 
 // lineBuffer is the FIFO of unshipped lines. It never drops lines to shrink:
-// the tower deduplicates at-least-once delivery, so buffering is always safe.
+// the hive deduplicates at-least-once delivery, so buffering is always safe.
 type lineBuffer struct {
 	lines []line
 	bytes int
@@ -44,7 +44,7 @@ func (b *lineBuffer) full() bool {
 }
 
 // peek returns the next batch without removing it, bounded by both event
-// count and total bytes; lines are removed only once the tower acked or
+// count and total bytes; lines are removed only once the hive acked or
 // permanently rejected the batch.
 func (b *lineBuffer) peek(maxEvents, maxBytes int) []line {
 	batch := b.lines
@@ -94,7 +94,7 @@ func newTailer(logPath string, transform func([]byte) []byte) *tailer {
 	return &tailer{logPath: logPath, transform: transform, readOffset: map[string]int64{}}
 }
 
-// wrapOpencanaryLine envelopes a raw opencanary JSON record so the tower can
+// wrapOpencanaryLine envelopes a raw opencanary JSON record so the hive can
 // tell it apart from a cowrie record. Unparseable lines are dropped.
 func wrapOpencanaryLine(data []byte) []byte {
 	var record map[string]any
@@ -161,7 +161,7 @@ func (t *tailer) collect(state *shipperState, buffer *lineBuffer) error {
 			t.readOffset[key] = file.Offset
 		}
 		if item.size < t.readOffset[key] {
-			// Truncated in place: re-read it; the tower dedupes.
+			// Truncated in place: re-read it; the hive dedupes.
 			t.readOffset[key] = 0
 		}
 

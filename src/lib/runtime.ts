@@ -13,7 +13,7 @@ import { readNewSensorEvents } from "@/lib/signals";
 import { sendTelegramSummary } from "@/lib/telegram";
 
 const runtimeGlobal = globalThis as typeof globalThis & {
-  honeySpireRuntimeStarted?: boolean;
+  neonHiveRuntimeStarted?: boolean;
 };
 
 function schedule(
@@ -69,18 +69,18 @@ function markRun(key: string) {
 }
 
 export function startRuntime() {
-  if (runtimeGlobal.honeySpireRuntimeStarted) return;
-  runtimeGlobal.honeySpireRuntimeStarted = true;
+  if (runtimeGlobal.neonHiveRuntimeStarted) return;
+  runtimeGlobal.neonHiveRuntimeStarted = true;
   getDatabase();
   const config = getConfig();
 
-  // The local Cowrie tailer only exists in full installs; towers receive
-  // remote beecon events over the ingest API instead.
-  if (config.HONEY_SPIRE_MODE === "full") {
+  // The local Cowrie tailer only exists in full installs; hives receive
+  // remote sensor events over the ingest API instead.
+  if (config.NEON_HIVE_MODE === "full") {
     schedule("Cowrie ingestion", 1_000, readNewCowrieEvents);
   }
   // Recon sources (sensor sidecar events + Opencanary) exist on both full and
-  // tower installs when their paths are configured.
+  // hive installs when their paths are configured.
   if (config.OPENCANARY_JSON_LOG || config.SENSOR_EVENTS_LOG) {
     schedule("Sensor ingestion", 1_000, readNewSensorEvents);
   }
@@ -92,7 +92,7 @@ export function startRuntime() {
   schedule("Retention cleanup", 60 * 60_000, async () => {
     if (!isDue("last_cleanup", 24 * 60 * 60_000)) return;
     cleanupDatabase(config.RETENTION_DAYS);
-    if (config.HONEY_SPIRE_MODE === "full") {
+    if (config.NEON_HIVE_MODE === "full") {
       await removeExpiredFiles(
         config.COWRIE_TTY_DIR,
         config.RAW_SESSION_RETENTION_DAYS,

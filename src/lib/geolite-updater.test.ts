@@ -37,7 +37,7 @@ describe("GeoLite updater", () => {
       const destination = path.join("/data", "geolite");
 
       expect(buildTemporaryDirectoryPrefix(destination)).toBe(
-        path.join(destination, ".honey-spire-update-"),
+        path.join(destination, ".neonhive-update-"),
       );
     });
   });

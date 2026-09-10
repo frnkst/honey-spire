@@ -24,7 +24,7 @@ const (
 )
 
 type config struct {
-	towerURL          string
+	hiveURL          string
 	token             string
 	name              string
 	version           string
@@ -101,10 +101,13 @@ func envPortList(key string, fallback []int) ([]int, error) {
 }
 
 func loadConfig() (config, error) {
+	// New variable names first. SENSOR boxes installed before the NeonHive
+	// rename still export BEECON_NAME/BEECON_TOKEN/TOWER_URL in their .env;
+	// falling back keeps an image-only upgrade from stranding them.
 	cfg := config{
 		version:       version,
-		name:          os.Getenv("BEECON_NAME"),
-		token:         os.Getenv("BEECON_TOKEN"),
+		name:          envString("SENSOR_NAME", os.Getenv("BEECON_NAME")),
+		token:         envString("SENSOR_TOKEN", os.Getenv("BEECON_TOKEN")),
 		logPath:       envString("COWRIE_JSON_LOG", "/data/cowrie/log/cowrie/cowrie.json"),
 		opencanaryLog: os.Getenv("OPENCANARY_JSON_LOG"),
 		stateDir:      envString("STATE_DIR", "/data/shipper"),
@@ -122,31 +125,32 @@ func loadConfig() (config, error) {
 
 	var missing []string
 	if !cfg.sidecar {
-		// The sidecar on tower/full installs writes recon events to a local
-		// file for the app to tail; it never talks to the tower.
-		if cfg.towerURL = envString("TOWER_URL", ""); cfg.towerURL == "" {
-			missing = append(missing, "TOWER_URL")
+		// The sidecar on hive/full installs writes recon events to a local
+		// file for the app to tail; it never talks to the hive.
+		cfg.hiveURL = envString("HIVE_URL", os.Getenv("TOWER_URL"))
+		if cfg.hiveURL == "" {
+			missing = append(missing, "HIVE_URL")
 		}
 		if cfg.token == "" {
-			missing = append(missing, "BEECON_TOKEN")
+			missing = append(missing, "SENSOR_TOKEN")
 		}
 		if cfg.name == "" {
-			missing = append(missing, "BEECON_NAME")
+			missing = append(missing, "SENSOR_NAME")
 		}
 	}
 	if len(missing) > 0 {
 		return cfg, fmt.Errorf("missing required environment variables: %s", missing)
 	}
 
-	parsed, err := url.Parse(cfg.towerURL)
+	parsed, err := url.Parse(cfg.hiveURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return cfg, fmt.Errorf("TOWER_URL must be an http(s) URL, got %q", cfg.towerURL)
+		return cfg, fmt.Errorf("HIVE_URL must be an http(s) URL, got %q", cfg.hiveURL)
 	}
-	cfg.towerURL = parsed.Scheme + "://" + parsed.Host + parsed.Path
-	cfg.towerURL = trimTrailingSlash(cfg.towerURL)
+	cfg.hiveURL = parsed.Scheme + "://" + parsed.Host + parsed.Path
+	cfg.hiveURL = trimTrailingSlash(cfg.hiveURL)
 
 	if !tokenPattern.MatchString(cfg.token) {
-		return cfg, fmt.Errorf("BEECON_TOKEN must be 64 hex characters")
+		return cfg, fmt.Errorf("SENSOR_TOKEN must be 64 hex characters")
 	}
 
 	if cfg.flushInterval, err = envDuration("FLUSH_INTERVAL", 5*time.Second); err != nil {
@@ -208,7 +212,7 @@ func run(cfg config) error {
 	}
 	touchAlive(cfg.stateDir)
 
-	client := newTowerClient(cfg, cfg.httpTimeout)
+	client := newHiveClient(cfg, cfg.httpTimeout)
 	buffer := &lineBuffer{}
 	tail := newTailer(cfg.logPath, nil)
 	retry := newBackoff()
@@ -226,15 +230,15 @@ func run(cfg config) error {
 		startDecoys(cfg.decoyPorts, reconEvents)
 	}
 
-	log.Printf("Honey Spire beecon shipper %s shipping to %s", version, cfg.towerURL)
+	log.Printf("NeonHive sensor shipper %s shipping to %s", version, cfg.hiveURL)
 
 	parked := false
 	var nextProbe time.Time
 	switch join := client.join(); join.status {
 	case shipShipped:
-		log.Printf("Joined the tower as %q.", cfg.name)
+		log.Printf("Joined the hive as %q.", cfg.name)
 	case shipRevoked:
-		log.Println("Beecon removed by the tower; shipping disabled.")
+		log.Println("Sensor removed by the hive; shipping disabled.")
 		parked = true
 		nextProbe = time.Now().Add(parkedProbeInterval)
 	default:
@@ -257,7 +261,7 @@ func run(cfg config) error {
 			}
 			nextProbe = now.Add(parkedProbeInterval)
 			if probe := client.ingest(nil); probe.status == shipShipped {
-				log.Println("Beecon accepted again; resuming shipment.")
+				log.Println("Sensor accepted again; resuming shipment.")
 				parked = false
 				retry.reset()
 				rejoined = false
@@ -307,10 +311,10 @@ func run(cfg config) error {
 				// poisoned line from wedging the shipper forever.
 				ackOffsets(state, batch)
 				buffer.drop(len(batch))
-				log.Printf("Tower rejected a batch permanently; dropped %d events (%s).", len(batch), result.reason)
+				log.Printf("Hive rejected a batch permanently; dropped %d events (%s).", len(batch), result.reason)
 			case shipPending:
 				if now.Sub(lastPendingLog) >= pendingLogInterval {
-					log.Println("Waiting for approval on the tower; buffering events.")
+					log.Println("Waiting for approval on the hive; buffering events.")
 					lastPendingLog = now
 				}
 				nextAttempt = now.Add(retry.delay(pendingBackoffCap))
@@ -321,9 +325,9 @@ func run(cfg config) error {
 					break flush
 				}
 				rejoined = true
-				log.Println("Tower does not know this beecon; re-joining.")
+				log.Println("Hive does not know this sensor; re-joining.")
 				if status := client.join(); status.status == shipRevoked {
-					log.Println("Beecon removed by the tower; shipping disabled.")
+					log.Println("Sensor removed by the hive; shipping disabled.")
 					tail.reset(state)
 					resetIfNotNil(canaryTail, state)
 					buffer.clear()
@@ -333,7 +337,7 @@ func run(cfg config) error {
 				nextAttempt = now.Add(retry.delay(maxBackoff))
 				break flush
 			case shipRevoked:
-				log.Println("Beecon removed by the tower; shipping disabled.")
+				log.Println("Sensor removed by the hive; shipping disabled.")
 				tail.reset(state)
 				resetIfNotNil(canaryTail, state)
 				buffer.clear()
@@ -379,8 +383,8 @@ func ackOffsets(state *shipperState, batch []line) {
 	}
 }
 
-// runSidecar is the tower/full-install sensor mode: recon events are appended
-// to a JSON-lines file on a shared volume; the Honey Spire app tails it and
+// runSidecar is the hive/full-install sensor mode: recon events are appended
+// to a JSON-lines file on a shared volume; the NeonHive app tails it and
 // enriches them, exactly like its local Cowrie tailer.
 func runSidecar(cfg config) error {
 	touchAlive(cfg.stateDir)
@@ -405,7 +409,7 @@ func runSidecar(cfg config) error {
 	}
 	defer file.Close()
 
-	log.Printf("Honey Spire sensor sidecar writing recon events to %s", eventLog)
+	log.Printf("NeonHive sensor sidecar writing recon events to %s", eventLog)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for range ticker.C {

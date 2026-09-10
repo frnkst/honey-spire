@@ -16,14 +16,14 @@ const (
 	pendingBackoffCap = 60 * time.Second
 )
 
-// shipStatus classifies one HTTP round trip to the tower.
+// shipStatus classifies one HTTP round trip to the hive.
 type shipStatus int
 
 const (
 	shipShipped shipStatus = iota // 2xx: batch acked
-	shipPending                   // beecon registered but awaiting approval
-	shipUnknown                   // tower does not know the token (re-join needed)
-	shipRevoked                   // beecon was removed on the tower
+	shipPending                   // sensor registered but awaiting approval
+	shipUnknown                   // hive does not know the token (re-join needed)
+	shipRevoked                   // sensor was removed on the hive
 	shipDrop                      // permanent client error: drop the batch
 	shipRetry                     // transient failure: retry with backoff
 )
@@ -35,7 +35,7 @@ type shipResponse struct {
 	skipped  int
 }
 
-type towerClient struct {
+type hiveClient struct {
 	baseURL string
 	token   string
 	name    string
@@ -43,9 +43,9 @@ type towerClient struct {
 	client  *http.Client
 }
 
-func newTowerClient(cfg config, timeout time.Duration) *towerClient {
-	return &towerClient{
-		baseURL: cfg.towerURL,
+func newHiveClient(cfg config, timeout time.Duration) *hiveClient {
+	return &hiveClient{
+		baseURL: cfg.hiveURL,
 		token:   cfg.token,
 		name:    cfg.name,
 		version: cfg.version,
@@ -53,7 +53,7 @@ func newTowerClient(cfg config, timeout time.Duration) *towerClient {
 	}
 }
 
-func (c *towerClient) post(path string, payload any) ([]byte, int, error) {
+func (c *hiveClient) post(path string, payload any) ([]byte, int, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, 0, err
@@ -77,10 +77,10 @@ func (c *towerClient) post(path string, payload any) ([]byte, int, error) {
 	return body, response.StatusCode, nil
 }
 
-// join registers the beecon on the tower. Idempotent: the tower returns the
+// join registers the sensor on the hive. Idempotent: the hive returns the
 // current approval status for this token.
-func (c *towerClient) join() shipResponse {
-	body, statusCode, err := c.post("/api/beecons/join", map[string]string{
+func (c *hiveClient) join() shipResponse {
+	body, statusCode, err := c.post("/api/sensors/join", map[string]string{
 		"name":    c.name,
 		"token":   c.token,
 		"version": c.version,
@@ -98,7 +98,7 @@ func (c *towerClient) join() shipResponse {
 	}
 }
 
-func (c *towerClient) ingest(events []string) shipResponse {
+func (c *hiveClient) ingest(events []string) shipResponse {
 	if events == nil {
 		events = []string{}
 	}
@@ -114,7 +114,7 @@ func (c *towerClient) ingest(events []string) shipResponse {
 			Skipped  int `json:"skipped"`
 		}{}
 		if err := json.Unmarshal(body, &response); err != nil {
-			// The tower acked the batch even if the payload surprised us.
+			// The hive acked the batch even if the payload surprised us.
 			return shipResponse{status: shipShipped}
 		}
 		return shipResponse{status: shipShipped, accepted: response.Accepted, skipped: response.Skipped}
@@ -141,7 +141,7 @@ func jsonField(body []byte, field string) string {
 }
 
 // backoff is exponential growth with jitter. The pending path clamps the
-// delay harder so an unapproved beecon polls its tower briskly.
+// delay harder so an unapproved sensor polls its hive briskly.
 type backoff struct {
 	base    time.Duration
 	attempt int

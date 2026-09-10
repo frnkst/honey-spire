@@ -8,17 +8,17 @@ import (
 	"time"
 )
 
-func newTestClient(t *testing.T, handler http.HandlerFunc) *towerClient {
+func newTestClient(t *testing.T, handler http.HandlerFunc) *hiveClient {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	cfg := config{towerURL: server.URL, token: "abc123", name: "test-beecon", version: "test"}
-	return newTowerClient(cfg, 5*time.Second)
+	cfg := config{hiveURL: server.URL, token: "abc123", name: "test-sensor", version: "test"}
+	return newHiveClient(cfg, 5*time.Second)
 }
 
 func TestJoinSucceeds(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/beecons/join" {
+		if r.URL.Path != "/api/sensors/join" {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer abc123" {
@@ -28,7 +28,7 @@ func TestJoinSucceeds(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Errorf("decode: %v", err)
 		}
-		if payload["name"] != "test-beecon" {
+		if payload["name"] != "test-sensor" {
 			t.Errorf("unexpected payload %+v", payload)
 		}
 		w.WriteHeader(http.StatusOK)
@@ -42,7 +42,7 @@ func TestJoinSucceeds(t *testing.T) {
 func TestJoinRevoked(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"error":"Beecon has been removed.","code":"revoked"}`))
+		_, _ = w.Write([]byte(`{"error":"Sensor has been removed.","code":"revoked"}`))
 	})
 	if join := client.join(); join.status != shipRevoked {
 		t.Fatalf("expected revoked, got %+v", join)
@@ -62,7 +62,7 @@ func TestIngestStatuses(t *testing.T) {
 		{"acked-unparseable", http.StatusOK, `ok`, shipShipped, 0, 0},
 		{"pending", http.StatusForbidden, `{"error":"awaiting","code":"pending"}`, shipPending, 0, 0},
 		{"revoked", http.StatusForbidden, `{"error":"removed","code":"revoked"}`, shipRevoked, 0, 0},
-		{"unknown", http.StatusUnauthorized, `{"error":"Unknown beecon token."}`, shipUnknown, 0, 0},
+		{"unknown", http.StatusUnauthorized, `{"error":"Unknown sensor token."}`, shipUnknown, 0, 0},
 		{"invalid", http.StatusBadRequest, `{"error":"Invalid request."}`, shipDrop, 0, 0},
 		{"too-large", http.StatusRequestEntityTooLarge, `{"error":"Batch too large."}`, shipDrop, 0, 0},
 		{"server-error", http.StatusInternalServerError, `oops`, shipRetry, 0, 0},
@@ -89,8 +89,8 @@ func TestIngestNetworkErrorRetries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	url := server.URL
 	server.Close() // nothing is listening anymore
-	cfg := config{towerURL: url, token: "abc", name: "n", version: "v"}
-	client := newTowerClient(cfg, time.Second)
+	cfg := config{hiveURL: url, token: "abc", name: "n", version: "v"}
+	client := newHiveClient(cfg, time.Second)
 	if got := client.ingest([]string{"x"}); got.status != shipRetry {
 		t.Fatalf("expected retry, got %+v", got)
 	}

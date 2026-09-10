@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import {
-  BeeconLimitError,
-  getBeeconSummary,
+  SensorLimitError,
+  getSensorSummary,
   registerJoin,
-} from "@/lib/beecons";
+} from "@/lib/sensors";
 import { clientIp, hasValidOrigin, rateLimit } from "@/lib/http";
 import { liveEvents } from "@/lib/live-events";
 
@@ -20,7 +20,7 @@ const joinSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  // The beecon shipper is a machine client and sends no Origin header, so
+  // The sensor shipper is a machine client and sends no Origin header, so
   // only reject when a browser-style Origin is present and forged.
   if (!hasValidOrigin(request, { required: false })) {
     return NextResponse.json({ error: "Invalid origin." }, { status: 403 });
@@ -42,20 +42,20 @@ export async function POST(request: NextRequest) {
     const join = registerJoin({ ...parsed.data, ip });
     if (join.status === "revoked") {
       return NextResponse.json(
-        { error: "Beecon has been removed.", code: "revoked" },
+        { error: "Sensor has been removed.", code: "revoked" },
         { status: 403 },
       );
     }
-    const summary = getBeeconSummary(join.beeconId);
-    if (summary) liveEvents.emit("beecon", summary);
+    const summary = getSensorSummary(join.sensorId);
+    if (summary) liveEvents.emit("sensor", summary);
     return NextResponse.json({
       status: join.status,
-      beeconId: join.beeconId,
+      sensorId: join.sensorId,
     });
   } catch (error) {
-    if (error instanceof BeeconLimitError) {
+    if (error instanceof SensorLimitError) {
       return NextResponse.json(
-        { error: "Too many pending beecons." },
+        { error: "Too many pending sensors." },
         { status: 503 },
       );
     }

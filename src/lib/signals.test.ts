@@ -6,7 +6,7 @@ import { getDashboardData } from "@/lib/db";
 import { processSignal } from "@/lib/signals";
 
 beforeAll(() => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "honey-spire-test-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "neonhive-test-"));
   process.env.DATABASE_PATH = path.join(directory, "test.db");
   process.env.GEOLITE_DIR = path.join(directory, "geolite");
   process.env.COWRIE_JSON_LOG = path.join(directory, "cowrie.json");

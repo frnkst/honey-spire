@@ -1,7 +1,7 @@
-name: honey-spire
+name: neonhive
 
-# Beecon install: honeypot only. The shipper tails cowrie's JSON log and
-# POSTs new events to the tower, where they are enriched and stored.
+# Sensor install: honeypot only. The shipper tails cowrie's JSON log and
+# POSTs new events to the hive, where they are enriched and stored.
 
 services:
   cowrie:
@@ -51,7 +51,7 @@ services:
         max-file: "3"
 
   shipper:
-    image: ${HONEY_SPIRE_SHIPPER_IMAGE:-ghcr.io/frnkst/honey-spire-shipper:latest}
+    image: ${NEON_HIVE_SHIPPER_IMAGE:-ghcr.io/frnkst/neonhive-shipper:latest}
     restart: unless-stopped
     depends_on:
       cowrie:
@@ -62,9 +62,9 @@ services:
     cap_add:
       - NET_RAW
     environment:
-      TOWER_URL: ${TOWER_URL}
-      BEECON_TOKEN: ${BEECON_TOKEN}
-      BEECON_NAME: ${BEECON_NAME}
+      HIVE_URL: ${HIVE_URL}
+      SENSOR_TOKEN: ${SENSOR_TOKEN}
+      SENSOR_NAME: ${SENSOR_NAME}
       COWRIE_JSON_LOG: /data/cowrie/log/cowrie/cowrie.json
       OPENCANARY_JSON_LOG: ${OPENCANARY_JSON_LOG:-}
       SENSOR_RECON: ${SENSOR_RECON:-off}
@@ -106,7 +106,7 @@ services:
   # Low-interaction service honeypots (MySQL, MSSQL, FTP, telnet, VNC, NTP,
   # git, RDP, redis, HTTP) enabled by the recon profile.
   opencanary:
-    image: ${OPENCANARY_IMAGE:-ghcr.io/frnkst/honey-spire-opencanary:latest}
+    image: ${OPENCANARY_IMAGE:-ghcr.io/frnkst/neonhive-opencanary:latest}
     profiles: ["recon"]
     restart: unless-stopped
     ports:

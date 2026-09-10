@@ -521,7 +521,7 @@ export function AttackMap({ data }: { data: DashboardData }) {
             })),
           },
           {
-            // This tower and its beecons: emerald triangles above the attacks.
+            // This hive and its sensors: emerald triangles above the attacks.
             type: "effectScatter",
             coordinateSystem: "geo",
             zlevel: 2,
@@ -550,11 +550,11 @@ export function AttackMap({ data }: { data: DashboardData }) {
             },
             data: data.sensors.map((sensor) => ({
               value: [sensor.longitude, sensor.latitude, 1],
-              name: sensor.local ? "TOWER" : sensor.name,
+              name: sensor.local ? "HIVE" : sensor.name,
               label: [
                 sensor.local
-                  ? "TOWER · This server (built-in)"
-                  : `BEECON · ${sensor.name}`,
+                  ? "HIVE · This server (built-in)"
+                  : `SENSOR · ${sensor.name}`,
                 sensor.location ?? "Unknown location",
                 sensor.online ? "online" : "offline",
               ].join("<br/>"),

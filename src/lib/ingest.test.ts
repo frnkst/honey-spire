@@ -3,21 +3,21 @@ import os from "node:os";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { approveBeecon, registerJoin } from "@/lib/beecons";
+import { approveSensor, registerJoin } from "@/lib/sensors";
 import { getDashboardData } from "@/lib/db";
 import { ingestBatch, MAX_EVENT_BYTES } from "@/lib/ingest";
 
 beforeAll(() => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "honey-spire-ingest-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "neonhive-ingest-"));
   process.env.DATABASE_PATH = path.join(directory, "test.db");
   process.env.GEOLITE_DIR = path.join(directory, "geolite");
 });
 
-function approvedBeecon(name: string) {
+function approvedSensor(name: string) {
   const token = randomBytes(32).toString("hex");
-  const { beeconId } = registerJoin({ name, token, ip: "192.0.2.1" });
-  approveBeecon(beeconId);
-  return beeconId;
+  const { sensorId } = registerJoin({ name, token, ip: "192.0.2.1" });
+  approveSensor(sensorId);
+  return sensorId;
 }
 
 function loginRecord(session: string) {
@@ -33,10 +33,10 @@ function loginRecord(session: string) {
 }
 
 describe("ingestBatch", () => {
-  it("accepts valid events, skips bad ones, and tags the beecon", async () => {
-    const beeconId = approvedBeecon("edge-a");
+  it("accepts valid events, skips bad ones, and tags the sensor", async () => {
+    const sensorId = approvedSensor("edge-a");
     const result = await ingestBatch(
-      beeconId,
+      sensorId,
       [
         // fingerprints arrive before the login, matching real Cowrie ordering
         '{"eventid":"cowrie.client.version","session":"100","version":"SSH-2.0-dropbear"}',
@@ -49,23 +49,23 @@ describe("ingestBatch", () => {
     );
     expect(result).toEqual({ accepted: 3, skipped: 2 });
 
-    const beeconOnly = getDashboardData("1h", beeconId);
-    expect(beeconOnly.totalAttacks).toBe(1);
-    expect(beeconOnly.recentAttacks[0]).toMatchObject({
-      beeconId,
+    const sensorOnly = getDashboardData("1h", sensorId);
+    expect(sensorOnly.totalAttacks).toBe(1);
+    expect(sensorOnly.recentAttacks[0]).toMatchObject({
+      sensorId,
       username: "root",
       clientVersion: "SSH-2.0-dropbear",
     });
-    expect(beeconOnly.recentCommands[0]).toMatchObject({
-      beeconId,
+    expect(sensorOnly.recentCommands[0]).toMatchObject({
+      sensorId,
       command: "id",
     });
     expect(getDashboardData("1h", "local").totalAttacks).toBe(0);
   });
 
   it("namespaces session ids so equal cowrie sessions never collide", async () => {
-    const a = approvedBeecon("edge-a2");
-    const b = approvedBeecon("edge-b");
+    const a = approvedSensor("edge-a2");
+    const b = approvedSensor("edge-b");
     await ingestBatch(a, [loginRecord("42")], "192.0.2.1");
     await ingestBatch(b, [loginRecord("42")], "192.0.2.2");
 
@@ -79,8 +79,8 @@ describe("ingestBatch", () => {
   });
 
   it("accepts an empty batch as a heartbeat", async () => {
-    const beeconId = approvedBeecon("edge-c");
-    const result = await ingestBatch(beeconId, [], "192.0.2.9");
+    const sensorId = approvedSensor("edge-c");
+    const result = await ingestBatch(sensorId, [], "192.0.2.9");
     expect(result).toEqual({ accepted: 0, skipped: 0 });
   });
 });

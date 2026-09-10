@@ -21,16 +21,16 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     NODE_OPTIONS=--max-old-space-size=192
 
-RUN groupadd --system --gid 999 honeyspire \
-    && useradd --system --uid 999 --gid honeyspire --home-dir /app honeyspire \
+RUN groupadd --system --gid 999 neonhive \
+    && useradd --system --uid 999 --gid neonhive --home-dir /app neonhive \
     && mkdir -p /data/app /data/geolite /data/cowrie \
-    && chown -R honeyspire:honeyspire /data/app /data/geolite /data/cowrie
+    && chown -R neonhive:neonhive /data/app /data/geolite /data/cowrie
 
-COPY --from=builder --chown=honeyspire:honeyspire /app/public ./public
-COPY --from=builder --chown=honeyspire:honeyspire /app/.next/standalone ./
-COPY --from=builder --chown=honeyspire:honeyspire /app/.next/static ./.next/static
-COPY --from=builder --chown=honeyspire:honeyspire /app/scripts ./scripts
+COPY --from=builder --chown=neonhive:neonhive /app/public ./public
+COPY --from=builder --chown=neonhive:neonhive /app/.next/standalone ./
+COPY --from=builder --chown=neonhive:neonhive /app/.next/static ./.next/static
+COPY --from=builder --chown=neonhive:neonhive /app/scripts ./scripts
 
-USER honeyspire
+USER neonhive
 EXPOSE 3000
 CMD ["node", "server.js"]

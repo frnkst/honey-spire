@@ -47,12 +47,12 @@ jobs:
             bash -n "$script"
           done
       - run: docker compose config --quiet
-      - name: Check tower and beecon compose files
+      - name: Check hive and sensor compose files
         run: |
-          printf 'TOWER_URL=https://tower.example.com\nBEECON_TOKEN=%s\nBEECON_NAME=ci\n' \
+          printf 'HIVE_URL=https://hive.example.com\nSENSOR_TOKEN=%s\nSENSOR_NAME=ci\n' \
             "$(openssl rand -hex 32)" >> .env
-          docker compose -f compose.tower.yaml config --quiet
-          docker compose -f compose.beecon.yaml config --quiet
+          docker compose -f compose.hive.yaml config --quiet
+          docker compose -f compose.sensor.yaml config --quiet
       - run: docker compose up -d --wait cowrie
       - name: Test global Cowrie admission policy
         run: |

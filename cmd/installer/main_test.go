@@ -62,7 +62,7 @@ func TestScanInstallerOutput(t *testing.T) {
 	events := make(chan tea.Msg, 4)
 	results := make(map[string]string)
 	var reportedError string
-	input := "::step::Starting Honey Spire\ncontainer output\n::error::Example failure\n::result::dashboard=https://honeypot.example.com\n"
+	input := "::step::Starting NeonHive\ncontainer output\n::error::Example failure\n::result::dashboard=https://honeypot.example.com\n"
 
 	scanInstallerOutput(strings.NewReader(input), events, results, &reportedError)
 
@@ -142,55 +142,55 @@ func TestSSHSocketListensOnIPv4AndIPv6(t *testing.T) {
 	}
 }
 
-func TestTowerInstallLeavesSSHAlone(t *testing.T) {
-	if !bytes.Contains(installCore, []byte(`if [[ "$TOPOLOGY" != "tower" ]]; then`)) {
-		t.Fatal("the SSH migration must be skipped for tower installs")
+func TestHiveInstallLeavesSSHAlone(t *testing.T) {
+	if !bytes.Contains(installCore, []byte(`if [[ "$TOPOLOGY" != "hive" ]]; then`)) {
+		t.Fatal("the SSH migration must be skipped for hive installs")
 	}
 	if !bytes.Contains(installCore, []byte("docker compose config --services | grep -qx cowrie")) {
-		t.Fatal("tower installs must verify no honeypot service is deployed")
+		t.Fatal("hive installs must verify no honeypot service is deployed")
 	}
-	if !bytes.Contains(installCore, []byte("compose.tower.yaml")) ||
-		!bytes.Contains(installCore, []byte("compose.beecon.yaml")) {
-		t.Fatal("tower and beecon installs must download their own compose files")
+	if !bytes.Contains(installCore, []byte("compose.hive.yaml")) ||
+		!bytes.Contains(installCore, []byte("compose.sensor.yaml")) {
+		t.Fatal("hive and sensor installs must download their own compose files")
 	}
 }
 
-func TestNormalizeTowerAddress(t *testing.T) {
+func TestNormalizeHiveAddress(t *testing.T) {
 	tests := map[string][]string{
-		"tower.example.com":       {"https://tower.example.com", "http://tower.example.com"},
-		"tower.example.com/":      {"https://tower.example.com", "http://tower.example.com"},
+		"hive.example.com":       {"https://hive.example.com", "http://hive.example.com"},
+		"hive.example.com/":      {"https://hive.example.com", "http://hive.example.com"},
 		"192.0.2.10":              {"https://192.0.2.10", "http://192.0.2.10"},
 		"192.0.2.10:3000":         {"https://192.0.2.10:3000", "http://192.0.2.10:3000"},
 		"http://192.0.2.10:3000":  {"http://192.0.2.10:3000"},
-		"https://tower.io/tower/": {"https://tower.io/tower"},
+		"https://hive.io/hive/": {"https://hive.io/hive"},
 	}
 	for input, expected := range tests {
-		actual, err := normalizeTowerAddress(input)
+		actual, err := normalizeHiveAddress(input)
 		if err != nil {
-			t.Errorf("normalizeTowerAddress(%q) failed: %v", input, err)
+			t.Errorf("normalizeHiveAddress(%q) failed: %v", input, err)
 			continue
 		}
 		if !slices.Equal(actual, expected) {
-			t.Errorf("normalizeTowerAddress(%q) = %q, want %q", input, actual, expected)
+			t.Errorf("normalizeHiveAddress(%q) = %q, want %q", input, actual, expected)
 		}
 	}
-	for _, broken := range []string{"", "https://user:pass@tower.example.com", "https://tower.example.com/?x=1", "ftp://tower.example.com"} {
-		if _, err := normalizeTowerAddress(broken); err == nil {
-			t.Errorf("normalizeTowerAddress(%q) should have failed", broken)
+	for _, broken := range []string{"", "https://user:pass@hive.example.com", "https://hive.example.com/?x=1", "ftp://hive.example.com"} {
+		if _, err := normalizeHiveAddress(broken); err == nil {
+			t.Errorf("normalizeHiveAddress(%q) should have failed", broken)
 		}
 	}
 }
 
-func TestProbeTowerFallsBackToHTTP(t *testing.T) {
+func TestProbeHiveFallsBackToHTTP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"ok"}`)
 	}))
 	defer server.Close()
 
-	// The https candidate is unreachable, mirroring a tower installed on a
+	// The https candidate is unreachable, mirroring a hive installed on a
 	// bare IP without TLS; the http candidate must win.
-	message := probeTower([]string{"https://127.0.0.1:1", server.URL})().(towerProbeMsg)
+	message := probeHive([]string{"https://127.0.0.1:1", server.URL})().(hiveProbeMsg)
 	if !message.ok {
 		t.Fatalf("expected the http candidate to answer: %s", message.detail)
 	}
@@ -198,19 +198,19 @@ func TestProbeTowerFallsBackToHTTP(t *testing.T) {
 		t.Fatalf("expected the http candidate URL, got %q", message.url)
 	}
 	if !message.insecure {
-		t.Fatal("an http tower must be flagged insecure")
+		t.Fatal("an http hive must be flagged insecure")
 	}
 }
 
-func TestProbeTowerReportsEveryCandidate(t *testing.T) {
+func TestProbeHiveReportsEveryCandidate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer server.Close()
 
-	message := probeTower([]string{"https://127.0.0.1:1", server.URL})().(towerProbeMsg)
+	message := probeHive([]string{"https://127.0.0.1:1", server.URL})().(hiveProbeMsg)
 	if message.ok {
-		t.Fatal("expected the probe to fail when no candidate is a tower")
+		t.Fatal("expected the probe to fail when no candidate is a hive")
 	}
 	for _, address := range []string{"https://127.0.0.1:1", server.URL} {
 		if !strings.Contains(message.detail, address) {
@@ -219,24 +219,24 @@ func TestProbeTowerReportsEveryCandidate(t *testing.T) {
 	}
 }
 
-func TestInsecureTowerProbeWarnsBeforeInstall(t *testing.T) {
+func TestInsecureHiveProbeWarnsBeforeInstall(t *testing.T) {
 	m, err := newModel()
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.topologyCursor = 2
-	beecon, _ := m.updateTopology(tea.KeyMsg{Type: tea.KeyEnter})
-	m = beecon.(model)
+	sensor, _ := m.updateTopology(tea.KeyMsg{Type: tea.KeyEnter})
+	m = sensor.(model)
 	m.fields[0].input.SetValue("192.0.2.10")
 	m.screen = screenProbing
 
-	updated, _ := m.Update(towerProbeMsg{ok: true, url: "http://192.0.2.10", insecure: true})
+	updated, _ := m.Update(hiveProbeMsg{ok: true, url: "http://192.0.2.10", insecure: true})
 	m = updated.(model)
-	if m.config.towerURL != "http://192.0.2.10" {
-		t.Fatalf("expected the insecure tower URL to be kept, got %q", m.config.towerURL)
+	if m.config.hiveURL != "http://192.0.2.10" {
+		t.Fatalf("expected the insecure hive URL to be kept, got %q", m.config.hiveURL)
 	}
 	if m.warnText == "" {
-		t.Fatal("an insecure tower must warn the operator before the install starts")
+		t.Fatal("an insecure hive must warn the operator before the install starts")
 	}
 	m.width = 80
 	if lines := strings.Split(m.View(), "\n"); len(m.warnText) > 0 {
@@ -257,19 +257,19 @@ func TestTopologySelectionFlow(t *testing.T) {
 		t.Fatal("the installer must start on the topology screen")
 	}
 
-	// Choosing BEECON jumps straight to the beecon fields.
+	// Choosing SENSOR jumps straight to the sensor fields.
 	m.topologyCursor = 2
-	beecon, _ := m.updateTopology(tea.KeyMsg{Type: tea.KeyEnter})
-	m = beecon.(model)
-	if m.screen != screenField || m.config.topology != topologyBeecon {
-		t.Fatalf("expected beecon fields, got screen %d", m.screen)
+	sensor, _ := m.updateTopology(tea.KeyMsg{Type: tea.KeyEnter})
+	m = sensor.(model)
+	if m.screen != screenField || m.config.topology != topologySensor {
+		t.Fatalf("expected sensor fields, got screen %d", m.screen)
 	}
 	if got := len(m.fields); got != 3 {
-		t.Fatalf("expected 3 beecon fields, got %d", got)
+		t.Fatalf("expected 3 sensor fields, got %d", got)
 	}
-	if m.fields[0].key != "tower_address" || m.fields[1].key != "beecon_name" ||
+	if m.fields[0].key != "hive_address" || m.fields[1].key != "sensor_name" ||
 		m.fields[2].key != "recon" {
-		t.Fatalf("unexpected beecon fields: %q, %q, %q",
+		t.Fatalf("unexpected sensor fields: %q, %q, %q",
 			m.fields[0].key, m.fields[1].key, m.fields[2].key)
 	}
 
@@ -277,74 +277,74 @@ func TestTopologySelectionFlow(t *testing.T) {
 	back, _ := m.updateField(tea.KeyMsg{Type: tea.KeyEsc})
 	m = back.(model)
 	if m.screen != screenTopology {
-		t.Fatal("escaping beecon fields should return to the topology screen")
+		t.Fatal("escaping sensor fields should return to the topology screen")
 	}
 
-	// Choosing TOWER continues to the quick/advanced profile screen.
+	// Choosing HIVE continues to the quick/advanced profile screen.
 	m.topologyCursor = 1
-	tower, _ := m.updateTopology(tea.KeyMsg{Type: tea.KeyEnter})
-	m = tower.(model)
-	if m.screen != screenMode || m.config.topology != topologyTower {
-		t.Fatalf("expected the profile screen for a tower, got screen %d", m.screen)
+	hive, _ := m.updateTopology(tea.KeyMsg{Type: tea.KeyEnter})
+	m = hive.(model)
+	if m.screen != screenMode || m.config.topology != topologyHive {
+		t.Fatalf("expected the profile screen for a hive, got screen %d", m.screen)
 	}
 	m.modeCursor = 0
 	review, _ := m.updateMode(tea.KeyMsg{Type: tea.KeyEnter})
 	m = review.(model)
-	if m.screen != screenReview || m.config.topology != topologyTower {
-		t.Fatalf("expected the review screen for a tower, got screen %d", m.screen)
+	if m.screen != screenReview || m.config.topology != topologyHive {
+		t.Fatalf("expected the review screen for a hive, got screen %d", m.screen)
 	}
 	view := m.reviewView(80)
 	if !strings.Contains(view, "Unchanged (port 22)") {
-		t.Fatal("tower review must state that real SSH stays on port 22")
+		t.Fatal("hive review must state that real SSH stays on port 22")
 	}
 }
 
-func TestBeeconDisplayNameValidation(t *testing.T) {
-	fields := beeconFields()
-	nameIndex := fieldIndex(fields, "beecon_name")
+func TestSensorDisplayNameValidation(t *testing.T) {
+	fields := sensorFields()
+	nameIndex := fieldIndex(fields, "sensor_name")
 
 	for _, valid := range []string{"edge-server-01", "Garden Sensor", "roof.top_1"} {
 		fields[nameIndex].input.SetValue(valid)
-		if err := validateField("beecon_name", valid, fields); err != nil {
+		if err := validateField("sensor_name", valid, fields); err != nil {
 			t.Errorf("display name %q should be valid: %v", valid, err)
 		}
 	}
 	for _, broken := range []string{"", "no exclamation!", string(make([]byte, 65))} {
-		if err := validateField("beecon_name", broken, fields); err == nil {
+		if err := validateField("sensor_name", broken, fields); err == nil {
 			t.Errorf("display name %q should be rejected", broken)
 		}
 	}
 }
 
-func TestBeeconReviewAndSummaryOmitToken(t *testing.T) {
+func TestSensorReviewAndSummaryOmitToken(t *testing.T) {
 	m, err := newModel()
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.config = installConfig{
-		topology:   topologyBeecon,
-		towerURL:   "https://tower.example.com",
-		beeconName: "edge one",
+		topology:   topologySensor,
+		hiveURL:   "https://hive.example.com",
+		sensorName: "edge one",
 	}
 	m.results = map[string]string{
-		"tower":    "https://tower.example.com",
+		"hive":    "https://hive.example.com",
 		"token":    "...abcd",
 		"ssh_host": "192.0.2.10",
 		"ssh_user": "operator",
-		"log_file": "/var/log/honey-spire-install.log",
+		"log_file": "/var/log/neonhive-install.log",
 	}
 	review := m.reviewView(80)
-	for _, expected := range []string{"https://tower.example.com", "edge one"} {
+	for _, expected := range []string{"https://hive.example.com", "edge one"} {
 		if !strings.Contains(review, expected) {
-			t.Fatalf("beecon review is missing %q", expected)
+			t.Fatalf("sensor review is missing %q", expected)
 		}
 	}
 
 	m.screen = screenSuccess
 	summary := m.persistentSummary()
-	for _, expected := range []string{"https://tower.example.com", "edge one", "ssh -p 3001 operator@192.0.2.10", "approve"} {
+	for _, expected := range []string{"https://hive.example.com", "edge one", "ssh -p 3001 operator@192.0.2.10", "approve"} {
 		if !strings.Contains(summary, expected) {
-			t.Fatalf("beecon summary is missing %q", expected)
+			t.Fatalf("sensor summary is missing %q", expected)
 		}
 	}
 }
@@ -361,7 +361,7 @@ func TestViewsFitStandardTerminal(t *testing.T) {
 		for _, current := range []screen{screenTopology, screenMode, screenField, screenProbing, screenReview, screenInstalling, screenSuccess, screenFailure} {
 			m.screen = current
 			m.config.mode = "quick"
-			m.installStep = "Starting Honey Spire"
+			m.installStep = "Starting NeonHive"
 			m.errText = "Example failure"
 			m.results = map[string]string{
 				"dashboard": "https://honeypot.example.com",

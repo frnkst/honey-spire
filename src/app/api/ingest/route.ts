@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { authenticateBeecon } from "@/lib/beecons";
+import { authenticateSensor } from "@/lib/sensors";
 import { clientIp } from "@/lib/http";
 import { ingestBatch, MAX_INGEST_EVENTS } from "@/lib/ingest";
 
@@ -10,7 +10,7 @@ const eventSchema = z.array(z.string().max(16_384));
 const MAX_BODY_CHARS = 4 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
-  const auth = authenticateBeecon(request);
+  const auth = authenticateSensor(request);
   if (!auth.ok) {
     return NextResponse.json(
       { error: auth.error, code: auth.code },
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await ingestBatch(
-    auth.beecon.id,
+    auth.sensor.id,
     parsed.data,
     clientIp(request),
   );

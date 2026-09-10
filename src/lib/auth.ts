@@ -3,7 +3,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { verify } from "@node-rs/argon2";
 import { requireAuthConfig } from "@/lib/config";
 
-const COOKIE_NAME = "honey_spire_session";
+const COOKIE_NAME = "neonhive_session";
 
 function secretKey(secret: string) {
   return new TextEncoder().encode(secret);

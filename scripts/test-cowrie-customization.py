@@ -58,7 +58,7 @@ def load_customization():
         }
     )
     spec = importlib.util.spec_from_file_location(
-        "honey_spire_customization", "deploy/sitecustomize.py"
+        "neonhive_customization", "deploy/sitecustomize.py"
     )
     module = importlib.util.module_from_spec(spec)
     if spec.loader is None:

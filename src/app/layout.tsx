@@ -26,8 +26,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Honey Spire",
-  description: "Live SSH threat intelligence from your Cowrie honeypot.",
+  title: "NeonHive",
+  description: "Live threat intelligence from your honeypots.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

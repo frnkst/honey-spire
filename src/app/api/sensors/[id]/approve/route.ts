@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
-import { getBeeconSummary, LOCAL_BEECON_ID, revokeBeecon } from "@/lib/beecons";
+import { approveSensor, getSensorSummary } from "@/lib/sensors";
 import { hasValidOrigin } from "@/lib/http";
 import { liveEvents } from "@/lib/live-events";
 
 export const dynamic = "force-dynamic";
 
-export async function DELETE(
+export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -18,22 +18,16 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  if (id === LOCAL_BEECON_ID) {
+  if (!getSensorSummary(id)) {
+    return NextResponse.json({ error: "Unknown sensor." }, { status: 404 });
+  }
+  if (!approveSensor(id)) {
     return NextResponse.json(
-      { error: "The built-in local beecon cannot be removed." },
+      { error: "This sensor cannot be approved." },
       { status: 409 },
     );
   }
-  if (!getBeeconSummary(id)) {
-    return NextResponse.json({ error: "Unknown beecon." }, { status: 404 });
-  }
-  if (!revokeBeecon(id)) {
-    return NextResponse.json(
-      { error: "This beecon has already been removed." },
-      { status: 409 },
-    );
-  }
-  const summary = getBeeconSummary(id);
-  if (summary) liveEvents.emit("beecon", summary);
+  const summary = getSensorSummary(id);
+  if (summary) liveEvents.emit("sensor", summary);
   return NextResponse.json({ ok: true });
 }

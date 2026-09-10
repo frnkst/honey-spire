@@ -1,16 +1,16 @@
-name: honey-spire
+name: neonhive
 
-# Tower install: dashboard + database only. Beecon honeypots ship their
+# Hive install: dashboard + database only. Sensor honeypots ship their
 # events to this server over the ingest API; no honeypot runs here.
 
 services:
   app:
-    image: ${HONEY_SPIRE_IMAGE:-ghcr.io/frnkst/honey-spire:latest}
+    image: ${NEON_HIVE_IMAGE:-ghcr.io/frnkst/neonhive:latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      HONEY_SPIRE_MODE: tower
-      DATABASE_PATH: /data/app/honey-spire.db
+      NEON_HIVE_MODE: hive
+      DATABASE_PATH: /data/app/neonhive.db
       GEOLITE_DIR: /data/geolite
       OPENCANARY_JSON_LOG: ${OPENCANARY_JSON_LOG:-}
       SENSOR_EVENTS_LOG: ${SENSOR_EVENTS_LOG:-}
@@ -100,10 +100,10 @@ services:
         max-file: "2"
 
   # Low-interaction service honeypots (MySQL, MSSQL, FTP, telnet, VNC, NTP,
-  # git, RDP, redis, HTTP) enabled by the recon profile. A tower exposes these
-  # alongside the dashboard so beecon operators still learn who scans them.
+  # git, RDP, redis, HTTP) enabled by the recon profile. A hive exposes these
+  # alongside the dashboard so sensor operators still learn who scans them.
   opencanary:
-    image: ${OPENCANARY_IMAGE:-ghcr.io/frnkst/honey-spire-opencanary:latest}
+    image: ${OPENCANARY_IMAGE:-ghcr.io/frnkst/neonhive-opencanary:latest}
     profiles: ["recon"]
     restart: unless-stopped
     ports:
@@ -145,7 +145,7 @@ services:
   # the sniffer sees packets before Docker NAT. Writes events for the app to
   # tail from the shared volume.
   sensor:
-    image: ${HONEY_SPIRE_SHIPPER_IMAGE:-ghcr.io/frnkst/honey-spire-shipper:latest}
+    image: ${NEON_HIVE_SHIPPER_IMAGE:-ghcr.io/frnkst/neonhive-shipper:latest}
     profiles: ["recon"]
     restart: unless-stopped
     network_mode: host

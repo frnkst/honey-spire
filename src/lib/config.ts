@@ -4,12 +4,12 @@ const environmentSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
-  HONEY_SPIRE_MODE: z.enum(["full", "tower"]).default("full"),
-  DATABASE_PATH: z.string().default("./data/honey-spire.db"),
+  NEON_HIVE_MODE: z.enum(["full", "hive"]).default("full"),
+  DATABASE_PATH: z.string().default("./data/neonhive.db"),
   COWRIE_JSON_LOG: z.string().default("./data/cowrie/cowrie.json"),
   COWRIE_TTY_DIR: z.string().default("./data/cowrie/tty"),
   // Recon sources: Opencanary's JSON log and the sensor sidecar's event log.
-  // Empty disables the local tailer (beecons ship these through ingest).
+  // Empty disables the local tailer (sensors ship these through ingest).
   OPENCANARY_JSON_LOG: z.string().default(""),
   SENSOR_EVENTS_LOG: z.string().default(""),
   GEOLITE_DIR: z.string().default("./data/geolite"),
