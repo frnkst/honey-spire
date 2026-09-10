@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="public/logo.png" alt="NeonHive" width="140" />
-</p>
-
 # NeonHive
 
 > **Run honeypots on purpose. Watch what happens.**
@@ -43,7 +39,7 @@ what attackers tried to do — from any browser.
 
 ![Global attack origin map with the Hive and its sensors](docs/screenshots/threat-map.jpg)
 
-![Sensor fleet status](docs/screenshots/beecon-fleet.jpg)
+![Sensor fleet status](docs/screenshots/sensor-fleet.jpg)
 
 ## What gets detected
 

@@ -26,7 +26,7 @@ export default async function LoginPage() {
           </p>
         </div>
         <div className="flex items-center justify-between border-t border-white/[.08] pt-5">
-          <span className="data-label">Node HS-01</span>
+          <span className="data-label">Node NH-01</span>
           <span className="data-label text-secondary">Encrypted operator access</span>
         </div>
       </section>
