@@ -849,7 +849,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
           </Card>
         </section>
 
-        <section>
+        <section className="mb-12">
           <SectionHeading
             detail="Raw credential and fingerprint feed"
             index="F / EVENTS"
