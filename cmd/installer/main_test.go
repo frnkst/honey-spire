@@ -62,7 +62,7 @@ func TestScanInstallerOutput(t *testing.T) {
 	events := make(chan tea.Msg, 4)
 	results := make(map[string]string)
 	var reportedError string
-	input := "::step::Starting NeonHive\ncontainer output\n::error::Example failure\n::result::dashboard=https://honeypot.example.com\n"
+	input := "::step::Starting neonhive\ncontainer output\n::error::Example failure\n::result::dashboard=https://honeypot.example.com\n"
 
 	scanInstallerOutput(strings.NewReader(input), events, results, &reportedError)
 
@@ -361,7 +361,7 @@ func TestViewsFitStandardTerminal(t *testing.T) {
 		for _, current := range []screen{screenTopology, screenMode, screenField, screenProbing, screenReview, screenInstalling, screenSuccess, screenFailure} {
 			m.screen = current
 			m.config.mode = "quick"
-			m.installStep = "Starting NeonHive"
+			m.installStep = "Starting neonhive"
 			m.errText = "Example failure"
 			m.results = map[string]string{
 				"dashboard": "https://honeypot.example.com",

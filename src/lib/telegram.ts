@@ -51,7 +51,7 @@ export async function sendTelegramSummary(period: TelegramPeriod) {
     }`;
   });
   const message = [
-    `🍯 NeonHive ${title}`,
+    `🍯 neonhive ${title}`,
     `Window: last ${hourly ? "60 minutes" : "24 hours"}`,
     `Generated: ${new Date().toISOString()}`,
     "",

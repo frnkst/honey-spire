@@ -11,7 +11,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       </div>
       <div className={cn(compact && "hidden sm:block")}>
         <div className="font-heading text-xl font-semibold leading-none tracking-[0.18em]">
-          NEONHIVE
+          neonhive
         </div>
         <div className="mt-1 font-mono text-[9px] uppercase tracking-[0.2em] text-primary/70">
           Signal intelligence / honeypots

@@ -26,7 +26,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NeonHive",
+  title: "neonhive",
   description: "Live threat intelligence from your honeypots.",
 };
 

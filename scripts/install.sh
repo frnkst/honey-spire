@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPOSITORY="${NEON_HIVE_REPOSITORY:-frnkst/NeonHive}"
+REPOSITORY="${NEON_HIVE_REPOSITORY:-frnkst/neonhive}"
 VERSION="${NEON_HIVE_VERSION:-main}"
 RELEASE="${NEON_HIVE_INSTALLER_RELEASE:-}"
 TMP_DIR=""
 
 fail() {
-  printf '\033[1;31mNeonHive installer bootstrap failed:\033[0m %s\n' "$*" >&2
+  printf '\033[1;31mneonhive installer bootstrap failed:\033[0m %s\n' "$*" >&2
   exit 1
 }
 
@@ -50,7 +50,7 @@ BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE}"
 install -d -m 0755 /usr/local/lib
 TMP_DIR="$(mktemp -d /usr/local/lib/neonhive-installer.XXXXXX)"
 
-printf '\033[1;33mDownloading NeonHive installer…\033[0m\n'
+printf '\033[1;33mDownloading neonhive installer…\033[0m\n'
 curl -fL --retry 3 --retry-delay 2 \
   "${BASE_URL}/${ASSET}" -o "${TMP_DIR}/${ASSET}"
 curl -fL --retry 3 --retry-delay 2 \

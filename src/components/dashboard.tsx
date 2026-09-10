@@ -938,7 +938,7 @@ export function Dashboard({ initialData }: { initialData: DashboardData }) {
         </section>
 
         <footer className="mt-12 flex flex-col gap-3 border-t border-white/[.07] py-6 text-[10px] uppercase tracking-[.14em] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span>NeonHive / passive threat observation</span>
+          <span>neonhive / passive threat observation</span>
           <span>Geolocation intelligence by GeoLite2</span>
         </footer>
       </div>

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPOSITORY="${NEON_HIVE_REPOSITORY:-frnkst/NeonHive}"
+REPOSITORY="${NEON_HIVE_REPOSITORY:-frnkst/neonhive}"
 RELEASE_REF="${NEON_HIVE_VERSION:-main}"
 INSTALL_DIR="${NEON_HIVE_INSTALL_DIR:-/opt/neonhive}"
 if [[ "$RELEASE_REF" == "main" ]]; then
@@ -9,8 +9,11 @@ if [[ "$RELEASE_REF" == "main" ]]; then
 else
   DEFAULT_IMAGE_TAG="$RELEASE_REF"
 fi
-IMAGE="${NEON_HIVE_IMAGE:-ghcr.io/frnkst/NeonHive:${DEFAULT_IMAGE_TAG}}"
-SHIPPER_IMAGE="${NEON_HIVE_SHIPPER_IMAGE:-ghcr.io/frnkst/NeonHive-shipper:${DEFAULT_IMAGE_TAG}}"
+# Docker image references must be lowercase (GHCR requirement).
+IMAGE="${NEON_HIVE_IMAGE:-ghcr.io/frnkst/neonhive:${DEFAULT_IMAGE_TAG}}"
+SHIPPER_IMAGE="${NEON_HIVE_SHIPPER_IMAGE:-ghcr.io/frnkst/neonhive-shipper:${DEFAULT_IMAGE_TAG}}"
+IMAGE="${IMAGE,,}"
+SHIPPER_IMAGE="${SHIPPER_IMAGE,,}"
 TOPOLOGY="${INSTALL_TOPOLOGY:-full}"
 case "$TOPOLOGY" in
   full | hive | sensor) ;;
@@ -83,7 +86,7 @@ report_failure() {
   set +e
 
   printf '::error::%s\n' "$failed_command"
-  printf '\nNeonHive installation failed.\n' >&2
+  printf '\nneonhive installation failed.\n' >&2
   printf '  Exit code: %s\n' "$exit_code" >&2
   printf '  Script line: %s\n' "$line_number" >&2
   printf '  Failed step: %s\n' "$failed_command" >&2
@@ -179,7 +182,7 @@ if [[ -n "$MAXMIND_ACCOUNT_ID" || -n "$MAXMIND_LICENSE_KEY" ]]; then
 fi
 
 step "Checking server compatibility"
-[[ "$(uname -s)" == "Linux" ]] || fail "NeonHive supports Linux only."
+[[ "$(uname -s)" == "Linux" ]] || fail "neonhive supports Linux only."
 case "$(uname -m)" in
   x86_64 | aarch64 | arm64) ;;
   *) fail "Supported CPU architectures are x86_64 and ARM64." ;;
@@ -316,7 +319,8 @@ else
   SESSION_SECRET="$(openssl rand -hex 32)"
 fi
 
-OPENCANARY_IMAGE="${OPENCANARY_IMAGE:-ghcr.io/frnkst/NeonHive-opencanary:${DEFAULT_IMAGE_TAG}}"
+OPENCANARY_IMAGE="${OPENCANARY_IMAGE:-ghcr.io/frnkst/neonhive-opencanary:${DEFAULT_IMAGE_TAG}}"
+OPENCANARY_IMAGE="${OPENCANARY_IMAGE,,}"
 if [[ "$RECON_SENSORS" == "on" ]]; then
   step "Preparing recon sensors"
   pull_image "$OPENCANARY_IMAGE"
@@ -443,19 +447,19 @@ if [[ "$TOPOLOGY" != "hive" ]]; then
       cp -a /etc/systemd/system/ssh.socket.d "$SSH_BACKUP/ssh.socket.d"
     SSH_CHANGED=1
 
-    sed -i '/^# BEGIN NEONHIVE$/,/^# END NEONHIVE$/d' /etc/ssh/sshd_config
-    sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by NeonHive: &/' \
+    sed -E -i '/^# BEGIN (NEONHIVE|neonhive)$/,/^# END (NEONHIVE|neonhive)$/d' /etc/ssh/sshd_config
+    sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by neonhive: &/' \
       /etc/ssh/sshd_config
     if [[ -d /etc/ssh/sshd_config.d ]]; then
       while IFS= read -r config_file; do
-        sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by NeonHive: &/' \
+        sed -i -E 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# Disabled by neonhive: &/' \
           "$config_file"
       done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf')
     fi
     {
-      printf '\n# BEGIN NEONHIVE\n'
+      printf '\n# BEGIN neonhive\n'
       printf 'Port %s\n' "$SSH_PORT"
-      printf '# END NEONHIVE\n'
+      printf '# END neonhive\n'
     } >>/etc/ssh/sshd_config
     sshd -t
 
@@ -479,7 +483,7 @@ EOF
   fi
 fi
 
-step "Starting NeonHive"
+step "Starting neonhive"
 cd "$INSTALL_DIR"
 docker compose down --remove-orphans
 docker compose up -d
@@ -512,7 +516,7 @@ case "$TOPOLOGY" in
       sleep 2
     done
     [[ "$APP_HEALTHY" -eq 1 ]] ||
-      fail "The NeonHive application did not start."
+      fail "The neonhive application did not start."
     docker compose ps --status running --services | grep -qx caddy ||
       fail "The dashboard proxy did not start."
     if docker compose config --services | grep -qx cowrie; then
@@ -525,7 +529,7 @@ case "$TOPOLOGY" in
       fail "The Cowrie honeypot did not start."
     docker compose exec -T cowrie python -c \
       "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')" ||
-      fail "Cowrie started without the NeonHive global authentication policy."
+      fail "Cowrie started without the neonhive global authentication policy."
     docker compose port cowrie 2222 | grep -q ':22$' ||
       fail "Docker did not publish Cowrie on host port 22."
     timeout 5 bash -c '</dev/tcp/127.0.0.1/22' ||
@@ -547,12 +551,12 @@ case "$TOPOLOGY" in
       sleep 2
     done
     [[ "$APP_HEALTHY" -eq 1 ]] ||
-      fail "The NeonHive application did not start."
+      fail "The neonhive application did not start."
     docker compose ps --status running --services | grep -qx cowrie ||
       fail "The Cowrie honeypot did not start."
     docker compose exec -T cowrie python -c \
       "from cowrie.core import auth; assert hasattr(auth, 'AuthGlobal')" ||
-      fail "Cowrie started without the NeonHive global authentication policy."
+      fail "Cowrie started without the neonhive global authentication policy."
     docker compose port cowrie 2222 | grep -q ':22$' ||
       fail "Docker did not publish Cowrie on host port 22."
     timeout 5 bash -c '</dev/tcp/127.0.0.1/22' ||

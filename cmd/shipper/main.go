@@ -101,7 +101,7 @@ func envPortList(key string, fallback []int) ([]int, error) {
 }
 
 func loadConfig() (config, error) {
-	// New variable names first. SENSOR boxes installed before the NeonHive
+	// New variable names first. SENSOR boxes installed before the neonhive
 	// rename still export BEECON_NAME/BEECON_TOKEN/TOWER_URL in their .env;
 	// falling back keeps an image-only upgrade from stranding them.
 	cfg := config{
@@ -230,7 +230,7 @@ func run(cfg config) error {
 		startDecoys(cfg.decoyPorts, reconEvents)
 	}
 
-	log.Printf("NeonHive sensor shipper %s shipping to %s", version, cfg.hiveURL)
+	log.Printf("neonhive sensor shipper %s shipping to %s", version, cfg.hiveURL)
 
 	parked := false
 	var nextProbe time.Time
@@ -384,7 +384,7 @@ func ackOffsets(state *shipperState, batch []line) {
 }
 
 // runSidecar is the hive/full-install sensor mode: recon events are appended
-// to a JSON-lines file on a shared volume; the NeonHive app tails it and
+// to a JSON-lines file on a shared volume; the neonhive app tails it and
 // enriches them, exactly like its local Cowrie tailer.
 func runSidecar(cfg config) error {
 	touchAlive(cfg.stateDir)
@@ -409,7 +409,7 @@ func runSidecar(cfg config) error {
 	}
 	defer file.Close()
 
-	log.Printf("NeonHive sensor sidecar writing recon events to %s", eventLog)
+	log.Printf("neonhive sensor sidecar writing recon events to %s", eventLog)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for range ticker.C {

@@ -142,17 +142,17 @@ var (
 
 func main() {
 	if runtime.GOOS != "linux" {
-		fmt.Fprintln(os.Stderr, "NeonHive supports Linux only.")
+		fmt.Fprintln(os.Stderr, "neonhive supports Linux only.")
 		os.Exit(1)
 	}
 	if os.Geteuid() != 0 {
-		fmt.Fprintln(os.Stderr, "Run NeonHive as root (for example, with sudo).")
+		fmt.Fprintln(os.Stderr, "Run neonhive as root (for example, with sudo).")
 		os.Exit(1)
 	}
 
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "NeonHive requires an interactive terminal.")
+		fmt.Fprintln(os.Stderr, "neonhive requires an interactive terminal.")
 		os.Exit(1)
 	}
 	defer tty.Close()
@@ -636,7 +636,7 @@ func normalizeHiveAddress(value string) ([]string, error) {
 	return candidates, nil
 }
 
-// probeHive verifies the hive is reachable and is actually NeonHive
+// probeHive verifies the hive is reachable and is actually neonhive
 // before the installer commits the sensor configuration. Candidates are
 // tried in order; the first address answering like a hive wins.
 func probeHive(candidates []string) tea.Cmd {
@@ -655,7 +655,7 @@ func probeHive(candidates []string) tea.Cmd {
 			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body)
 			response.Body.Close()
 			if response.StatusCode != http.StatusOK || decodeErr != nil || body.Status != "ok" {
-				details = append(details, fmt.Sprintf("%s (not a NeonHive hive)", address))
+				details = append(details, fmt.Sprintf("%s (not a neonhive hive)", address))
 				continue
 			}
 			return hiveProbeMsg{ok: true, url: address, insecure: strings.HasPrefix(address, "http://")}
@@ -802,9 +802,9 @@ func (m model) View() string {
 
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Center,
-		lipgloss.NewStyle().Bold(true).Foreground(dark).Background(gold).Padding(0, 1).Render("NH"),
+		lipgloss.NewStyle().Bold(true).Foreground(dark).Background(gold).Padding(0, 1).Render("nh"),
 		"  ",
-		title.Render("NEONHIVE"),
+		title.Render("neonhive"),
 	)
 	line := lipgloss.NewStyle().Foreground(graphite).Render(strings.Repeat("-", max(1, panelWidth-lipgloss.Width(header)-2)))
 	top := lipgloss.JoinHorizontal(lipgloss.Center, header, "  ", line)
@@ -1036,7 +1036,7 @@ func (m model) reviewView(width int) string {
 		kicker.Render("02 / READY TO DEPLOY"),
 		"",
 		lipgloss.NewStyle().Bold(true).Foreground(white).Render("Review the installation plan"),
-		subtle.Width(width-4).Render("Keep this SSH session open. NeonHive verifies port 3001 before claiming port 22."),
+		subtle.Width(width-4).Render("Keep this SSH session open. neonhive verifies port 3001 before claiming port 22."),
 		"",
 		panel,
 		"",
@@ -1139,7 +1139,7 @@ func (m model) successView(width int) string {
 			)
 		}
 		panelBody = []string{
-			lipgloss.NewStyle().Bold(true).Foreground(success).Render("NEONHIVE IS ONLINE"),
+			lipgloss.NewStyle().Bold(true).Foreground(success).Render("neonhive is online"),
 			"",
 			summaryRow("DASHBOARD", dashboard),
 			credential,
@@ -1230,7 +1230,7 @@ func (m model) persistentSummary() string {
 		default:
 			lines := []string{
 				"",
-				lipgloss.NewStyle().Bold(true).Foreground(success).Render("NEONHIVE IS ONLINE"),
+				lipgloss.NewStyle().Bold(true).Foreground(success).Render("neonhive is online"),
 				"Dashboard: " + valueOr(m.results["dashboard"], "Deployment complete"),
 				"Username:  " + m.config.adminUsername,
 			}
@@ -1253,7 +1253,7 @@ func (m model) persistentSummary() string {
 	case screenFailure:
 		return strings.Join([]string{
 			"",
-			errorText.Bold(true).Render("NEONHIVE INSTALLATION FAILED"),
+			errorText.Bold(true).Render("neonhive installation failed"),
 			m.errText,
 			"Diagnostics: /var/log/neonhive-install.log",
 			"",

@@ -1,8 +1,8 @@
-# NeonHive
+# neonhive
 
 > **Run honeypots on purpose. Watch what happens.**
 
-NeonHive is a lightweight honeypot fleet with a live threat dashboard for
+neonhive is a lightweight honeypot fleet with a live threat dashboard for
 Linux servers. A fake SSH service answers on port 22 while your real SSH moves
 to 3001 — every username, password, command, and client fingerprint lands on a
 live ops dashboard. Service honeypots, decoy ports, and a raw-socket scan
@@ -17,7 +17,7 @@ approval.
 A single command launches the interactive installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/frnkst/NeonHive/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/frnkst/neonhive/main/scripts/install.sh | sudo bash
 ```
 
 The installer first asks what this server should be: **FULL** (dashboard and
@@ -26,14 +26,14 @@ only, shipping captured attacks to a Hive). On FULL and SENSOR installs your
 real SSH moves to port 3001 — keep the current session open and make sure your
 provider firewall allows TCP **3001**.
 
-![NeonHive installer — choose the node role](docs/screenshots/installer.png)
+![neonhive installer — choose the node role](docs/screenshots/installer.png)
 
 ## Dashboard
 
 Approve joining sensors, watch attacks land in real time, and read exactly
 what attackers tried to do — from any browser.
 
-![NeonHive operator login](docs/screenshots/login.jpg)
+![neonhive operator login](docs/screenshots/login.jpg)
 
 ![Threatfield — live attack telemetry](docs/screenshots/dashboard-overview.jpg)
 
@@ -67,7 +67,7 @@ Recon sensors are enabled by default during installation and add roughly
 ## GeoLite2 setup
 
 Advanced installation asks for the numeric **MaxMind account ID** and the
-associated **license key** as separate values. NeonHive uses both values for
+associated **license key** as separate values. neonhive uses both values for
 HTTP Basic authentication when downloading the GeoLite2 City and ASN
 databases. Do not enter the account password.
 
