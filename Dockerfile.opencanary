@@ -14,5 +14,11 @@ RUN useradd --system --uid 900 --home-dir /data --create-home opencanary
 USER 900
 WORKDIR /data
 
-ENTRYPOINT ["opencanaryd"]
-CMD ["--dev", "--config", "/etc/opencanaryd/opencanary.conf"]
+# opencanaryd is a bash wrapper written for root containers with sudo: as uid
+# 900 its `sudo` shim falls through to `$(which sudo) $*`, and with no sudo in
+# the image `sudo -E twistd ...` becomes `-E twistd ...` -> exec failure. Its
+# housekeeping (touch /var/tmp/opencanary.log, chown /etc/opencanaryd) also
+# fights the read-only container. Skip the wrapper and run twistd on the .tac
+# directly; the config is read from /etc/opencanaryd/opencanary.conf by
+# default, which is where compose mounts it.
+ENTRYPOINT ["twistd", "-noy", "/usr/local/bin/opencanary.tac", "--pidfile", "/tmp/opencanaryd.pid"]
