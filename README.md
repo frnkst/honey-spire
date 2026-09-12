@@ -26,20 +26,40 @@ only, shipping captured attacks to a Hive). On FULL and SENSOR installs your
 real SSH moves to port 3001 — keep the current session open and make sure your
 provider firewall allows TCP **3001**.
 
-![neonhive installer — choose the node role](docs/screenshots/installer.png)
+The polished, one-command installer walks you through the right deployment for
+your server—an all-in-one setup, a central Hive, or a remote Sensor.
+
+![neonhive interactive installer showing node role selection](docs/screenshots/installer-node-role.png)
 
 ## Dashboard
 
 Approve joining sensors, watch attacks land in real time, and read exactly
 what attackers tried to do — from any browser.
 
-![neonhive operator login](docs/screenshots/login.jpg)
+See attack volume at a glance, compare activity across the Hive and every
+Sensor, and spot unusual peaks over time.
 
-![Threatfield — live attack telemetry](docs/screenshots/dashboard-overview.jpg)
+![Attack volume chart broken down by Hive and Sensor](docs/screenshots/attack-volume.png)
 
-![Global attack origin map with the Hive and its sensors](docs/screenshots/threat-map.jpg)
+Inspect the latest login attempts with their source, location, credentials, and
+SSH client fingerprint in one live feed.
 
-![Sensor fleet status](docs/screenshots/sensor-fleet.jpg)
+![Recent attacks with captured credentials and client fingerprints](docs/screenshots/recent-attacks.png)
+
+Watch attacks and reconnaissance light up around the world while monitoring
+the live status of the Hive and its connected Sensors.
+
+![Global attack origin map and live sensor status](docs/screenshots/global-attack-map.png)
+
+Follow the live command stream to see exactly what attackers run after they
+enter the emulated shell.
+
+![Live stream of commands captured from emulated shell sessions](docs/screenshots/command-stream.png)
+
+Turn raw reconnaissance into useful intelligence: see targeted ports, loudest
+scanners, and the usernames and passwords attackers try most often.
+
+![Recon activity and credential intelligence dashboard](docs/screenshots/recon-intelligence.png)
 
 ## What gets detected
 
